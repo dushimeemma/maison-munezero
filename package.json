@@ -18,6 +18,7 @@
     "verify": "node scripts/project.mjs verify",
     "deploy:check": "node scripts/check-deployment-config.mjs",
     "deploy:api": "node scripts/render-deploy.mjs",
-    "deploy:web:check": "node scripts/check-web.mjs"
+    "deploy:web:check": "node scripts/check-web.mjs",
+    "release:publish": "node scripts/publish-release.mjs"
   }
 }

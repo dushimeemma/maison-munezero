@@ -166,6 +166,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: production
+    outputs:
+      deployment-id: ${{ steps.deploy.outputs.deployment_id }}
     env:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
@@ -175,13 +177,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm run deploy:api
+      - id: deploy
+        run: npm run deploy:api
 
   deploy-frontend:
     name: Deploy website to Vercel
     needs: [deploy-backend, flutter-web]
     if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.url }}
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
@@ -210,3 +215,35 @@ jobs:
           echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
           echo "Website deployment: $deployment_url — $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - run: npm run deploy:web:check
+
+  release:
+    name: Publish production GitHub release
+    needs: [deploy-backend, deploy-frontend]
+    if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CD_ENABLED: ${{ vars.CD_ENABLED }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      WEB_SITE_URL: ${{ vars.WEB_SITE_URL }}
+      DEPLOY_BACKEND_RESULT: ${{ needs.deploy-backend.result }}
+      DEPLOY_FRONTEND_RESULT: ${{ needs.deploy-frontend.result }}
+      RENDER_DEPLOY_ID: ${{ needs.deploy-backend.outputs.deployment-id }}
+      VERCEL_DEPLOYMENT_URL: ${{ needs.deploy-frontend.outputs.deployment-url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: maison-vercel-web
+          path: .vercel/output
+      - name: Tag the deployed commit and publish verified assets
+        run: npm run release:publish

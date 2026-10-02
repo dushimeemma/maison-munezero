@@ -44,6 +44,7 @@ export async function deployRender({ apiKey, serviceId, commit, apiBaseUrl,
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const result = await deployRender({ apiKey: process.env.RENDER_API_KEY, serviceId: process.env.RENDER_SERVICE_ID,
     commit: process.env.GITHUB_SHA, apiBaseUrl: process.env.API_BASE_URL });
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `deployment_id=${result.id}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
     `API deployment: **${result.status}** — ${result.commit} (${result.id})\n`);
 }
