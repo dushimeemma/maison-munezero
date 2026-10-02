@@ -1,0 +1,23 @@
+{
+  "name": "maison-munezero",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flutter and NestJS monorepo for Maison Munezero",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "api:install": "npm ci --prefix apps/api",
+    "api:dev": "npm run dev --prefix apps/api",
+    "api:build": "npm run build --prefix apps/api",
+    "api:test": "npm test --prefix apps/api",
+    "flutter:install": "node scripts/project.mjs flutter-install",
+    "flutter:analyze": "node scripts/project.mjs flutter-analyze",
+    "flutter:test": "node scripts/project.mjs flutter-test",
+    "web:build": "node scripts/build-web.mjs",
+    "web:package": "node scripts/prepare-vercel.mjs",
+    "ci:test": "node --test scripts/test/*.test.mjs",
+    "verify": "node scripts/project.mjs verify",
+    "deploy:check": "node scripts/check-deployment-config.mjs",
+    "deploy:api": "node scripts/render-deploy.mjs",
+    "deploy:web:check": "node scripts/check-web.mjs"
+  }
+}
