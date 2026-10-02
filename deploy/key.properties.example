@@ -1,0 +1,4 @@
+storePassword=SET_IN_LOCAL_IGNORED_KEY_PROPERTIES
+keyPassword=SET_IN_LOCAL_IGNORED_KEY_PROPERTIES
+keyAlias=upload
+storeFile=/absolute/path/to/maison-upload.jks

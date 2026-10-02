@@ -1,0 +1,212 @@
+name: Maison Munezero CI-CD
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maison-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: 'true'
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+
+jobs:
+  automation:
+    name: Deployment automation tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm run ci:test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install actionlint-py==1.7.12.25
+      - run: actionlint .github/workflows/ci.yml
+
+  api:
+    name: Backend tests and container build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: maison
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: maison_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U maison -d maison_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm run api:install
+      - run: npm run api:test
+        env:
+          TEST_DATABASE_URL: postgresql://maison:ci-only-password@localhost:5432/maison_test
+      - run: npm audit --prefix apps/api --omit=dev --audit-level=high
+      - run: docker build --tag maison-munezero-api:${{ github.sha }} apps/api
+
+  flutter-web:
+    name: Frontend checks and web build
+    runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ vars.API_BASE_URL || '/api/v1' }}
+      CD_ENABLED: ${{ vars.CD_ENABLED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          cache: true
+      - run: npm run flutter:install
+      - run: npm run flutter:analyze
+      - run: npm run flutter:test
+      - run: npm run web:build
+      - run: npm run web:package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maison-vercel-web
+          path: .vercel/output
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  android-review:
+    name: Android review APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release --no-tree-shake-icons --dart-define=API_BASE_URL="$API_BASE_URL"
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
+          ORG_GRADLE_PROJECT_reviewBuild: 'true'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maison-android-review-only
+          path: apps/flutter/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-build:
+    name: Unsigned iOS build
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-tree-shake-icons --no-codesign --dart-define=API_BASE_URL="$API_BASE_URL"
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
+
+  deployment-config:
+    name: Check production configuration
+    if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      WEB_SITE_URL: ${{ vars.WEB_SITE_URL }}
+      RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm run deploy:check
+
+  deploy-backend:
+    name: Deploy API to Render
+    needs: [automation, api, flutter-web, android-review, ios-build, deployment-config]
+    if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm run deploy:api
+
+  deploy-frontend:
+    name: Deploy website to Vercel
+    needs: [deploy-backend, flutter-web]
+    if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      WEB_SITE_URL: ${{ vars.WEB_SITE_URL }}
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global vercel@62.1.0
+      - run: vercel pull --yes --environment=production
+      - uses: actions/download-artifact@v4
+        with:
+          name: maison-vercel-web
+          path: .vercel/output
+      - id: deploy
+        name: Publish the verified web artifact
+        run: |
+          deployment_url="$(vercel deploy --prebuilt --prod --yes)"
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo "Website deployment: $deployment_url — $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - run: npm run deploy:web:check

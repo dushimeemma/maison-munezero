@@ -1,0 +1,59 @@
+# Import only after reviewing the paid compute plan and production credentials.
+# GitHub Actions owns repeat deployments; this file does not provision anything locally.
+services:
+  - type: web
+    name: maison-munezero-api
+    runtime: docker
+    plan: 0.5c-512mb
+    region: frankfurt
+    branch: main
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: apps/api
+    preDeployCommand: node dist/migrate.js
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SEED_SAMPLE_DATA
+        value: 'false'
+      - key: DB_SSL
+        value: 'true'
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MOMO_BASE_URL
+        value: https://proxy.momoapi.mtn.com
+      - key: MOMO_TARGET_ENVIRONMENT
+        value: mtnrwanda
+      - key: MOMO_SUBSCRIPTION_KEY
+        sync: false
+      - key: MOMO_API_USER
+        sync: false
+      - key: MOMO_API_KEY
+        sync: false
+      - key: MOMO_CALLBACK_BASE
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: '587'
+      - key: SMTP_SECURE
+        value: 'false'
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

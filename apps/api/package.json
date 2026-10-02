@@ -1,0 +1,43 @@
+{
+  "name": "@maison-munezero/api",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "npm run build && concurrently -k \"tsc -w\" \"node --watch dist/main.js\"",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "12.1.2",
+    "@nestjs/core": "12.1.2",
+    "@nestjs/platform-express": "12.1.2",
+    "bcryptjs": "3.0.3",
+    "dotenv": "17.2.3",
+    "helmet": "8.1.0",
+    "nodemailer": "10.0.13",
+    "pg": "8.23.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@nestjs/testing": "12.1.2",
+    "@types/express": "5.0.5",
+    "@types/node": "24.10.0",
+    "@types/nodemailer": "7.0.3",
+    "@types/pg": "8.15.6",
+    "@types/supertest": "6.0.3",
+    "concurrently": "9.2.1",
+    "supertest": "7.1.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
