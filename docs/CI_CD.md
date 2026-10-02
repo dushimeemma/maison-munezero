@@ -32,15 +32,16 @@ Flutter configuration are ignored by Git. Gradle wrapper files are committed.
 
 ## Branch flow
 
-Implement changes on a feature branch and open a PR into `main`. `develop` can
-also be used for integration checks. PRs and pushes to `main`/`develop` run CI.
+Implement changes on a feature branch and open a PR into `develop`. Promote
+reviewed integration changes with a separate PR from `develop` into `main`.
+PRs and pushes to `main`/`develop` run CI.
 Use the five CI jobs as required checks in GitHub branch protection when the
 repository is available. This source does not configure GitHub's server-side
 branch protection or environment approvals.
 
 | CI job | Checks / output |
 | --- | --- |
-| Deployment automation tests | Configuration, provider errors, revision matching, finite polling, static web packaging and actionlint workflow validation |
+| Deployment automation tests | Configuration, provider errors, revision matching, finite polling, web packaging, release safety/retries and actionlint workflow validation |
 | Backend tests and container build | PostgreSQL 17 workflow suite, dependency audit and production Docker build |
 | Frontend checks and web build | Flutter analysis/UI tests, release web build and Vercel output artifact |
 | Android review APK | Java 17 / SDK 36; debug-signed review artifact |
@@ -153,16 +154,87 @@ CI builds Android review artifacts and unsigned iOS output. Play Store/App Store
 publishing is not configured because business signing and store accounts are
 not provided. Native release instructions remain in the main README.
 
+## Production GitHub Releases
+
+The `release` job in `.github/workflows/ci.yml` depends on successful backend
+and frontend deployment jobs, including their public revision/health checks.
+It runs only for a `main` push or manual workflow run with `CD_ENABLED=true`.
+Failed/skipped deployments, PRs and `develop` builds cannot publish a release.
+The downloaded web artifact must identify the same full commit and API URL.
+
+The release job alone receives `contents: write`; verification and deployment
+jobs keep `contents: read`. It uses the automatic `GITHUB_TOKEN`, so no new
+release token secret is required. Tag protection, if enabled separately, must
+allow the workflow to create production tags.
+
+Tags have the form `v<application-version>+deploy.<workflow-run-number>`, for
+example `v1.0.0+deploy.12`. The suffix is semantic-version build metadata, not a
+beta version. Each new production workflow run gets its own tag. A retry of
+the same run keeps the tag, and tags always point to the tested `GITHUB_SHA`.
+Existing tags are never moved to another commit.
+
+Before changing the application version, update these files together:
+
+- Root `package.json` and `package-lock.json`.
+- `apps/api/package.json` and `apps/api/package-lock.json`.
+- `apps/flutter/pubspec.yaml`: the same semantic version, with a separately
+  incremented mobile build number, e.g. `1.1.0+2`.
+
+The automation suite rejects mismatched or prerelease application versions
+before deployment. Releases do not write version bumps back to source.
+
+Each release contains:
+
+| Asset | Contents |
+| --- | --- |
+| `maison-munezero-web.zip` | The deployed Vercel Build Output API v3 package (`config.json` and `static/`), downloaded from this workflow without recompiling Flutter |
+| `deployment.json` | Full commit, shared application version, workflow run URL, Render deployment ID, canonical API/website URLs and Vercel deployment URL |
+| `SHA256SUMS` | SHA-256 hashes of the web ZIP and deployment manifest |
+| GitHub source archives | Source at the exact tagged commit, provided automatically by GitHub |
+
+ZIP entries use a fixed timestamp and sorted ordering so repackaging the same
+artifact produces the same checksum. Download the three attached assets into
+one directory and run `sha256sum -c SHA256SUMS` to verify them.
+
+`.github/release.yml` categorizes GitHub-generated change notes using PR labels:
+`breaking-change`, `security`, `feature`/`enhancement`, `bug`/`fix`,
+`dependencies`, `ci`/`infrastructure`/`release`, and `documentation`.
+Unlabelled PRs go under Other changes; `skip-changelog` excludes a PR.
+These labels affect notes, not the application version.
+
+Publication starts with a draft. Assets are uploaded and checked against
+GitHub's reported sizes and SHA-256 digests before the release becomes public
+and is marked latest. This also works with immutable releases. If an upload
+fails, use **Re-run failed jobs**: completed assets are reused, incomplete
+uploads are cleaned up, and the draft is published after all assets verify.
+A retry of an already published release with identical assets performs reads
+only and does not change the latest-release pointer.
+
+Re-running *all* jobs may produce new provider deployment IDs or different
+compiled bytes. If these differ from an existing release, publication fails
+without replacing its assets. Start a new manual workflow run on `main` to
+record a new deployment instead. Tag/release ownership or checksum conflicts
+also fail explicitly; do not delete tags merely to bypass a conflict.
+
+Release publication failures do not roll back an already healthy production
+deployment. Investigate the failed release job and retry it. Rollback remains
+the explicit provider/schema procedure above. Android debug-signed review
+APKs remain Actions artifacts; signed Android/iOS store packages are not
+attached or published by this job.
+
 ## Verification boundaries
 
-Local deployment tests use provider doubles and prove the pipeline's decision
-logic. They do not prove the acceptance of actual Render/Vercel credentials,
-the remote Docker/native builds, GitHub Actions execution or live MoMo. Those
-checks become possible after repository/service setup. See `VERIFICATION.md`.
+Local deployment/release tests use provider doubles and prove the pipeline's
+decision logic. Actual GitHub Actions verification results are recorded in
+`VERIFICATION.md`. Render/Vercel credentials, live release publication and live
+MoMo still require configured production services.
 
 Primary references used for this configuration:
 
 - https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions
+- https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+- https://docs.github.com/en/rest/releases/releases
+- https://docs.github.com/en/rest/releases/assets
 - https://render.com/docs/blueprint-spec
 - https://render.com/docs/environment-variables
 - https://api-docs.render.com/reference/create-deploy

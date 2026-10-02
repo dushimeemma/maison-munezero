@@ -19,7 +19,7 @@ The Instagram reference could not be retrieved reliably. Products, prices, garme
 - Inventory adjustments with reasons, product image uploads through Cloudinary, product publication and price management.
 - Return requests, finance review and externally verified refund records.
 - In-app notifications, SMTP outbox/retry worker, financial summaries, low stock and audit history.
-- Docker setup, PostgreSQL migrations, environment examples and GitHub CI/CD: verification, Render API deployment and Vercel web publication, plus Android review and unsigned iOS builds.
+- Docker setup, PostgreSQL migrations, environment examples and GitHub CI/CD: verification, Render API deployment, Vercel web publication and production GitHub Releases, plus Android review and unsigned iOS builds.
 
 ## Monorepo and CI/CD
 
@@ -31,7 +31,9 @@ npm run flutter:install
 npm run verify
 ```
 
-Feature branches are reviewed through pull requests. All checks gate production deployment on `main`: the API deploys to Render first, then its health/revision check gates publication of the compiled Flutter website to Vercel. CD is activated with `CD_ENABLED=true` after the required GitHub variables/secrets and service credentials are configured.
+Feature branches target `develop`; reviewed changes are promoted from `develop` to `main`. All checks gate production deployment on `main`: the API deploys to Render first, then its health/revision check gates publication of the compiled Flutter website to Vercel. CD is activated with `CD_ENABLED=true` after the required GitHub variables/secrets and service credentials are configured.
+
+After both production deployments pass, Actions publishes a GitHub Release tagged to that exact commit, with categorized change notes, the deployed web bundle, deployment metadata and SHA-256 checksums. Tags use the shared application version plus the workflow build number, for example `v1.0.0+deploy.12`. PRs and `develop` builds do not publish releases. See the release and retry instructions in the CI/CD guide.
 
 See **[docs/CI_CD.md](docs/CI_CD.md)** for the complete setup, exact settings, migration strategy and rollback instructions. GitHub repository: [dushimeemma/maison-munezero](https://github.com/dushimeemma/maison-munezero). Service projects and deployment credentials require the setup described in the guide.
 
