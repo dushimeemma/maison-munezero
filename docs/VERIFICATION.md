@@ -30,6 +30,8 @@ Tests cover staff-role escalation rejection, unauthorised reads, submitted price
 
 The workflow suite uses controlled Flutterwave and legacy MTN doubles. Separate adapter tests exercise authenticated v3 charge/verification request contracts, response parsing, redirect validation, test/live credential matching, mode changes and webhook secrets using HTTP fixtures. Workflow tests cover independent matching of reference, amount, currency, payer and transaction ID; duplicate settlement; lost-response handling without another charge; cash blocking during uncertainty; provider declines; and historical MTN reconciliation. These checks do not establish provider uptime, merchant approval or live settlement. Those require the merchant validation described in `LAUNCH.md`. The SMTP outbox worker, reservation-expiry worker and Cloudinary upload path also require deployment acceptance checks with real services.
 
+Native PostgreSQL runs one additional regression test for background polling: a backlog of unavailable legacy MTN payments must not prevent new Flutterwave payments from being checked. This test needs real advisory locks and nested database connections, so it is skipped in PGlite. The local result is 32 passed and one skipped; hosted PostgreSQL CI exercises all 33 tests.
+
 Local Flutter tooling was blocked by automatic approval review after it attempted cloud-instance metadata access. The repository's existing hosted CI provides frontend and native verification. CI uploads the resolved Flutter dependency lock alongside its build checks to support reproducible dependency review.
 
 ## Layout previews

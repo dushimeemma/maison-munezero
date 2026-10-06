@@ -10,6 +10,7 @@ import { Test } from '@nestjs/testing';
 import appModule from '../dist/app.js';
 import dbModule from '../dist/db.js';
 import paymentModule from '../dist/payments.js';
+import workerModule from '../dist/workers.js';
 const {AppModule}=appModule,{Db}=dbModule,{Momo,Flutterwave}=paymentModule;
 let app,sql,db,engine,admin,customer,other,designer,tailor,driver,driver2,accountant,product,variant;
 const provider=Object.assign(new Flutterwave(),{assertConfigured(){},calls:0,results:new Map(),async submit(){this.calls++;return {authorizationUrl:'https://checkout.flutterwave.com/captcha/verify/test'};},async status(p){return this.results.get(p.reference)||null;}});
@@ -227,4 +228,28 @@ test('a provider transaction ID cannot fund two orders',async()=>{
   assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).status,i===0?201:409);
   assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.paid,i===0?o.total:0);
  }
+});
+test('legacy provider failures cannot starve new payments in background polling', {skip:!process.env.TEST_DATABASE_URL}, async()=>{
+ // Replica advisory locks and nested worker/payment connections need native PostgreSQL.
+ const original=legacyProvider.status,smtp=process.env.SMTP_HOST,legacy=[];
+ delete process.env.SMTP_HOST;
+ try{
+  await sql.query("UPDATE payments SET checked_at=now() WHERE status='PENDING'");
+  for(let i=0;i<10;i++){
+   const o=await paymentOrder();
+   legacy.push((await sql.query("INSERT INTO payments(order_id,provider,amount,provider_currency,phone,actor_id,submission,sandbox,created_at) VALUES($1,'MOMO',$2,'EUR',$3,$4,'SENT',true,now()-interval '2 hours') RETURNING id",[o.id,o.total,'250780000001',customer.id])).rows[0].id);
+  }
+  const o=await paymentOrder(),p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,{phone:'250730000001'},randomUUID())).body;
+  const raw=(await sql.query('SELECT * FROM payments WHERE id=$1',[p.id])).rows[0];
+  legacyProvider.status=async()=>{throw new Error('Legacy provider unavailable');};
+  const workers=app.get(workerModule.Workers);
+  await workers.tick();
+  assert.equal((await sql.query('SELECT count(*)::int n FROM payments WHERE id=ANY($1::uuid[]) AND checked_at IS NOT NULL',[legacy])).rows[0].n,10);
+  await workers.tick();assert.ok((await sql.query('SELECT checked_at FROM payments WHERE id=$1',[p.id])).rows[0].checked_at);
+  // When all payments are due again, poll the least recently checked first, regardless of creation order.
+  await sql.query("UPDATE payments SET checked_at=now()-interval '30 seconds' WHERE id=ANY($1::uuid[])",[legacy]);
+  await sql.query("UPDATE payments SET checked_at=now()-interval '60 seconds' WHERE id=$1",[p.id]);
+  provider.results.set(raw.reference,verified(raw));await workers.tick();
+  assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.paid,o.total);
+ }finally{legacyProvider.status=original;if(smtp===undefined)delete process.env.SMTP_HOST;else process.env.SMTP_HOST=smtp;}
 });

@@ -46,10 +46,11 @@ export class PaymentService {
  safe(p:any){return {id:p.id,orderId:p.order_id,provider:p.provider,amount:p.amount,status:p.status,failure:p.failure,submission:p.submission,providerCurrency:p.provider_currency,sandbox:p.sandbox,authorizationUrl:p.status==='PENDING'?paymentAuthorizationUrl(p.authorization_url):null};}
  async reconcile(reference:string){
   const p=await one(this.db,'SELECT * FROM payments WHERE reference=$1',[reference]);if(!p||p.status!=='PENDING')return p?this.safe(p):{ok:true};
+  // Record failed verification attempts too, so unavailable legacy requests cannot monopolise polling.
+  await this.db.query('UPDATE payments SET checked_at=now() WHERE id=$1',[p.id]);
   const gateway=this.providers.forPayment(p);
   if(p.submission==='NEW'){await this.submitNew(p);return this.safe(await one(this.db,'SELECT * FROM payments WHERE id=$1',[p.id]));}
   const result=await gateway.status(p);
-  await this.db.query('UPDATE payments SET checked_at=now() WHERE id=$1',[p.id]);
   if(!result){
    // Only legacy MTN guarantees safe resubmission with the identical provider UUID.
    // Flutterwave timeouts remain pending for verification or merchant review.
