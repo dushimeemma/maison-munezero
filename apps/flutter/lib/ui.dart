@@ -109,7 +109,9 @@ class _RemoteViewState extends State<RemoteView> {
   }
 
   void reload() {
-    setState(() => future = widget.load());
+    setState(() {
+      future = widget.load();
+    });
   }
 
   @override
