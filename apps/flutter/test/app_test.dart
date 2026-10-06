@@ -62,9 +62,11 @@ class PaymentFixtureApi extends FixtureApi {
   PaymentFixtureApi() : super('CUSTOMER');
   final posts = <String>[];
   bool paid = false;
+  int orderLoads = 0;
   @override
   Future<dynamic> get(String path) async {
     if (path == '/orders/test-order') {
+      orderLoads++;
       return {
         'id': 'test-order', 'number': 1, 'channel': 'ONLINE',
         'status': paid ? 'CONFIRMED' : 'AWAITING_PAYMENT',
@@ -218,8 +220,11 @@ void main() {
     expect(launched.single.arguments['url'], 'https://checkout.flutterwave.com/captcha/verify/test');
     expect(api.posts, isEmpty);
     await tester.tap(find.text('Check payment'));
+    await tester.pump();
     await tester.pumpAndSettle();
     expect(api.posts, ['/payments/test-payment/check']);
+    expect(api.paid, isTrue);
+    expect(api.orderLoads, 2);
     expect(find.text('Continue payment'), findsNothing);
     expect(tester.takeException(), isNull);
   });

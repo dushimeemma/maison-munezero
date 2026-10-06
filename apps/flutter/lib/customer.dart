@@ -582,13 +582,13 @@ class OrderDetail extends StatelessWidget {
                                     final p = await api.post(
                                       '/payments/${pending['id']}/check',
                                     );
+                                    reload();
                                     if (context.mounted) {
                                       toast(
                                         context,
                                         'Payment: ${label(p['status'])}',
                                       );
                                     }
-                                    reload();
                                   } catch (e) {
                                     if (context.mounted) toast(context, e);
                                   }
