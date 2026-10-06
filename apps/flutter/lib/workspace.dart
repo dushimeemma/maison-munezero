@@ -892,7 +892,7 @@ class PaymentsWorkspace extends StatelessWidget {
       children: [
         const PageHeading(
           'Payments',
-          'Received cash and MoMo requests, with pending payment reconciliation.',
+          'Received cash and mobile-money requests, with pending payment reconciliation.',
         ),
         RemoteView(
           load: () => api.get('/payments'),

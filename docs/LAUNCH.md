@@ -6,48 +6,59 @@ Replace sample products/illustrations/prices and the shop address. Confirm the s
 
 Provide a business-owned privacy policy, support contact and terms suitable for the actual operation, including custom garments and retained transaction records. The source includes account deletion; its retention behaviour is documented in `BUSINESS_RULES.md`. This document is a deployment guide, not a legal compliance certification.
 
-## MTN MoMo
+## Flutterwave mobile money
 
-Configure the Collection API subscription key, API user and API key on the API server. Never put these values in Flutter `--dart-define`, the mobile app or a Git repository.
+New payments use Flutterwave's **v3 Rwanda mobile-money charge API** in RWF, supporting MTN MoMo and Airtel Money. Create a Rwanda business account and confirm collection activation, fees and settlement arrangements with Flutterwave. Live merchant approval is separate from installing this code. This integration requires a **v3 secret key**, not a v4 OAuth client secret; never put it in Flutter, `--dart-define` or Git.
 
-Sandbox:
+For local testing, obtain the v3 secret key from the dashboard in **Test Mode** and set these values in the root `.env` for Docker, or `apps/api/.env` for the local Node server:
 
 ```dotenv
-MOMO_BASE_URL=https://sandbox.momodeveloper.mtn.com
-MOMO_TARGET_ENVIRONMENT=sandbox
-MOMO_SUBSCRIPTION_KEY=YOUR_SANDBOX_COLLECTION_KEY
-MOMO_API_USER=YOUR_SANDBOX_API_USER
-MOMO_API_KEY=YOUR_SANDBOX_API_KEY
-MOMO_CALLBACK_BASE=https://YOUR_PUBLIC_API_HOST
+FLUTTERWAVE_MODE=test
+FLUTTERWAVE_SECRET_KEY=YOUR_V3_TEST_SECRET_KEY
+FLUTTERWAVE_WEBHOOK_SECRET=YOUR_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 ```
 
-The sandbox uses EUR as a test currency. No exchange conversion is performed. Use test payer numbers and outcomes approved by MTN; sandbox does not prove live RWF settlement.
+The test secret key starts with `FLWSECK_TEST-`. Both test and live requests use `https://api.flutterwave.com/v3` and RWF. The API rejects mismatched keys/modes; production startup also rejects test mode. Use test orders separately from the live shop: successful test transactions update test order records but do not collect real money. Flutterwave documents automatic authorization of Rwanda mobile-money test payments after a few seconds on its confirmation page.
 
-Production, after merchant approval:
+After changing Docker environment values or updating this branch:
+
+```bash
+docker compose build api
+docker compose run --rm api node dist/migrate.js
+docker compose up -d --force-recreate api
+```
+
+Keep the database volume. Migration `002_flutterwave_payments.sql` preserves existing payments and adds Flutterwave records, authorization URLs, payer snapshots and an independent test-mode flag.
+
+In the Flutterwave dashboard, configure the webhook URL as `https://YOUR_PUBLIC_API_HOST/api/v1/payments/flutterwave/webhook`, set its secret hash to the same `FLUTTERWAVE_WEBHOOK_SECRET`, and enable webhook retries. The v3 `verif-hash` header is checked using a constant-time comparison. The posted status/amount is never accepted as financial truth: the server calls the authenticated verification API by its stored `tx_ref`, checks reference, exact amount, currency and payer, then settles once under database locks. Polling every 30 seconds and the customer's **Check payment** button also work when webhooks cannot reach a local server.
+
+Checkout: choose **Pay with mobile money**, enter a Rwanda wallet number in `2507XXXXXXXX` format, choose due/deposit or full balance, then tap **Continue payment**. A separate browser tab opens on web; iOS/Android open the system browser. Complete the confirmation page, approve your wallet's prompt when using live mode, return to the app and tap **Check payment**. The application never asks for a wallet PIN. Reopening the confirmation page does not create another charge. Allow the website to open the confirmation tab if your browser blocks it.
+
+The email and customer name are snapshotted from the order's customer account. Walk-in orders without an attached customer use the sales account's email for the required provider contact field; attach a customer account when their own email should receive provider communications.
+
+Live configuration, **after merchant approval**:
 
 ```dotenv
 NODE_ENV=production
-MOMO_BASE_URL=https://proxy.momoapi.mtn.com
-MOMO_TARGET_ENVIRONMENT=mtnrwanda
-MOMO_SUBSCRIPTION_KEY=YOUR_PRODUCTION_COLLECTION_KEY
-MOMO_API_USER=YOUR_PRODUCTION_API_USER
-MOMO_API_KEY=YOUR_PRODUCTION_API_KEY
-MOMO_CALLBACK_BASE=https://YOUR_PUBLIC_API_HOST
+FLUTTERWAVE_MODE=live
+FLUTTERWAVE_SECRET_KEY=YOUR_V3_LIVE_SECRET_KEY
+FLUTTERWAVE_WEBHOOK_SECRET=YOUR_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 CORS_ORIGINS=https://YOUR_WEB_HOST
 ```
 
-Confirm the endpoint, target environment, currency, callback-host registration, account settlement and merchant onboarding with MTN Rwanda for the actual contract. The listed production endpoint is MTN's published general endpoint, not evidence of Maison Munezero's approval. Callbacks are complemented by status polling; callback data alone is never used to mark an order paid.
+If submission times out, do not create another payment, switch providers, or collect cash for that order. Flutterwave requests are not automatically resubmitted after uncertain submission: absence from verification can be temporary. Keep the order pending, verify by reference and investigate through the merchant dashboard/support. Release a pending payment only after confirming its final outcome; do not change payment rows merely to remove a pending warning. The app does not implement an automatic cross-provider fallback.
 
-Before launch, test live small-value transactions, payer refusal, timeout, duplicate callback, API restart after submission and reconciliation against the merchant statement. Do not begin a second payment while one is pending. The application never requests or stores a MoMo PIN.
+Existing `MOMO` payments continue using their original MTN status API and stored currency. Keep the original `MOMO_*` settings on the server until those payments are reconciled. New requests, including the older `/orders/:id/momo` compatibility route, use Flutterwave. Historical cash payments remain cash. Do not switch test/live credentials with pending transactions from the previous mode; finish reconciliation first or keep separate deployments/databases.
 
-MTN primary references:
+Before launch, validate MTN and Airtel collection with small live amounts, refusal, timeout, repeat callbacks, a restart during submission, deposit/balance and merchant-statement reconciliation. Automated fixtures do not establish provider uptime or live settlement. An aggregator still relies on the underlying wallet networks.
 
-- https://momodeveloper.mtn.com/get-started
-- https://momodeveloper.mtn.com/api-documentation
-- https://momodeveloper.mtn.com/content/html_widgets/v98wn.html
-- https://momodeveloper.mtn.com/content/html_widgets/uv7jo.html
-- https://momodeveloper.mtn.com/content/html_widgets/1vu7v.html
-- https://momodevelopercommunity.mtn.com/how-to-59/momo-api-production-configuration-101
+Primary references:
+
+- https://developer.flutterwave.com/docs/rwanda
+- https://developer.flutterwave.com/reference/charge-via-rwanda-mobile-money
+- https://developer.flutterwave.com/reference/verify-transaction-with-tx_ref
+- https://developer.flutterwave.com/docs/webhooks
+- https://flutterwave.com/ng/support/onboarding/onboarding-requirements-for-opening-a-business-account-in-rwanda
 
 ## Email and media
 

@@ -57,7 +57,7 @@ export class OrderService {
   const o=await this.visible(sql,id,a);
   const items=(await sql.query('SELECT * FROM order_items WHERE order_id=$1',[id])).rows;
   const history=(await sql.query('SELECT status,note,created_at FROM order_history WHERE order_id=$1 ORDER BY created_at',[id])).rows;
-  const payments=(await sql.query('SELECT id,provider,amount,status,failure,created_at FROM payments WHERE order_id=$1 ORDER BY created_at DESC',[id])).rows;
+  const payments=(await sql.query("SELECT id,provider,amount,status,failure,provider_currency,sandbox,CASE WHEN status='PENDING' THEN authorization_url ELSE NULL END authorization_url,created_at FROM payments WHERE order_id=$1 ORDER BY created_at DESC",[id])).rows;
   const delivery=await one(sql,'SELECT d.*,u.name driver_name FROM deliveries d LEFT JOIN users u ON u.id=d.driver_id WHERE order_id=$1',[id]);
   if(a.role==='DRIVER')delete o.pickup_code;
   return {...o,items,history,payments,delivery};

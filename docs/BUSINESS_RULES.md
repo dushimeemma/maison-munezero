@@ -24,11 +24,13 @@ Custom orders do not deduct ready-to-wear stock. Fabric/material procurement, wo
 
 ## Payments
 
-Ready-to-wear checkout requires full payment. Bespoke orders support deposit and balance. MoMo payment requests use amounts stored on the order, never an amount submitted by the customer. There is at most one pending payment per order. Successful payments increment paid amounts once under database locks; repeated callbacks/checks cannot increment again.
+Ready-to-wear checkout requires full payment. Bespoke orders support deposit and balance. Mobile-money payment requests use amounts stored on the order, never an amount submitted by the customer. There is at most one pending payment per order. Successful payments increment paid amounts once under database locks; repeated callbacks/checks cannot increment again.
 
-MoMo callbacks are wake-up signals. The server independently fetches MTN status and compares the payment ID, amount, currency and payer before settlement. Unknown/time-out outcomes remain pending. The worker checks pending transactions. If a submission was interrupted and the provider confirms no transaction exists, the same provider UUID can be resubmitted; a new payment is not created.
+Flutterwave v3 webhooks require the configured secret hash and only trigger independent verification. The server fetches the transaction by its stored reference and checks the exact amount, RWF currency and snapshotted customer email; a returned phone number must also match. Successful settlement requires a provider transaction ID. A unique provider/transaction-ID index prevents the same transaction funding two payments. Posted callback data and confirmation-page messages cannot settle orders.
 
-Sandbox requests use MTN's test EUR currency with the same numeric test amount. This is **not a currency conversion**, does not collect RWF, and must not be used for live selling. The client labels a sandbox request. Production uses the approved Rwanda environment and RWF.
+Unknown/time-out outcomes remain pending. The worker checks both Flutterwave and historical MTN transactions. Flutterwave charges are never automatically repeated after uncertain submission, even when verification has no result yet. Legacy MTN may safely resubmit its identical provider UUID. Provider failover and pending-payment cancellation are not automatic; finance must establish the final outcome before allowing another collection.
+
+Flutterwave test requests use RWF with test credentials and are clearly labelled. The test-mode flag is stored independently of currency. Test success updates test order records only; use a separate test database/deployment, finish existing pending payments before changing credential mode, and use live mode with approved merchant credentials for production. Historical MTN EUR sandbox payments retain their original label/currency.
 
 Only authorised sales users record physically received cash. The cash endpoint is idempotent and rejects an amount exceeding the unpaid balance.
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'api.dart';
 import 'ui.dart';
 import 'extras.dart';
@@ -535,7 +536,7 @@ class OrderDetail extends StatelessWidget {
                             ),
                             const SizedBox(height: 14),
                             const Text(
-                              'Approve the request on your phone. Enter your MoMo PIN only in the MTN prompt.',
+                              'Pay with MTN MoMo or Airtel Money. Continue to the payment confirmation page, then approve the request on your phone. Enter your PIN only in your wallet provider’s prompt.',
                               style: TextStyle(
                                 height: 1.5,
                                 color: Colors.black54,
@@ -543,9 +544,37 @@ class OrderDetail extends StatelessWidget {
                             ),
                             const SizedBox(height: 14),
                             if (pending != null) ...[
+                              if (pending['sandbox'] == true)
+                                const Text(
+                                  'TEST PAYMENT · No real money is collected.',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                               const Text(
-                                'A payment is pending. Check it before starting another payment.',
+                                'Return here after confirmation and check payment before starting another payment.',
                               ),
+                              if (pending['failure'] != null)
+                                Text('${pending['failure']}'),
+                              if (pending['authorization_url'] != null) ...[
+                                const SizedBox(height: 14),
+                                FilledButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final opened = await launchUrl(
+                                        Uri.parse('${pending['authorization_url']}'),
+                                        mode: LaunchMode.externalApplication,
+                                        webOnlyWindowName: '_blank',
+                                      );
+                                      if (!opened && context.mounted) {
+                                        toast(context, 'Could not open payment confirmation. Allow this site to open a new tab, then try Continue payment again.');
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) toast(context, e);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.open_in_new),
+                                  label: const Text('Continue payment'),
+                                ),
+                              ],
                               const SizedBox(height: 14),
                               FilledButton.icon(
                                 onPressed: () async {
@@ -577,11 +606,11 @@ class OrderDetail extends StatelessWidget {
                                       final key = api.newKey();
                                       await editForm(
                                         context,
-                                        'Pay with MTN MoMo',
+                                        'Pay with mobile money',
                                         [
                                           FieldSpec(
                                             'phone',
-                                            'MoMo number · 2507XXXXXXXX',
+                                            'MTN or Airtel number · 2507XXXXXXXX',
                                             initial: '${o['customer_phone']}',
                                           ),
                                           const FieldSpec(
@@ -593,17 +622,16 @@ class OrderDetail extends StatelessWidget {
                                         ],
                                         (d) async {
                                           final p = await api.post(
-                                            '/payments/orders/$id/momo',
+                                            '/payments/orders/$id/mobile-money',
                                             d,
                                             key,
                                           );
                                           if (context.mounted) {
                                             toast(
                                               context,
-                                              p['sandbox'] == true
-                                                  ? 'SANDBOX TEST payment submitted. No live payment is being collected.'
-                                                  : p['failure'] ??
-                                                        'Approve the MoMo request on your phone.',
+                                              p['failure'] ?? (p['sandbox'] == true
+                                                  ? 'TEST payment started. Tap Continue payment to complete the test, then Check payment.'
+                                                  : 'Tap Continue payment, approve the wallet request, then Check payment.'),
                                             );
                                           }
                                         },
@@ -613,7 +641,7 @@ class OrderDetail extends StatelessWidget {
                                       );
                                       reload();
                                     },
-                                    child: const Text('Pay with MoMo'),
+                                    child: const Text('Pay with mobile money'),
                                   ),
                                   if (api.sales)
                                     OutlinedButton(

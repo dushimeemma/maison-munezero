@@ -58,6 +58,42 @@ class FixtureApi extends Api {
   }
 }
 
+class PaymentFixtureApi extends FixtureApi {
+  PaymentFixtureApi() : super('CUSTOMER');
+  final posts = <String>[];
+  bool paid = false;
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/orders/test-order') {
+      return {
+        'id': 'test-order', 'number': 1, 'channel': 'ONLINE',
+        'status': paid ? 'CONFIRMED' : 'AWAITING_PAYMENT',
+        'created_at': '2026-10-06T10:00:00Z', 'fulfilment': 'PICKUP',
+        'customer_name': 'Test Customer', 'customer_phone': '250780000001',
+        'subtotal': 1500, 'tax': 0, 'delivery_fee': 0, 'total': 1500,
+        'paid': paid ? 1500 : 0, 'deposit_due': 1500,
+        'items': [], 'history': [],
+        'payments': [{
+          'id': 'test-payment', 'provider': 'FLUTTERWAVE', 'amount': 1500,
+          'status': paid ? 'SUCCESSFUL' : 'PENDING', 'sandbox': true,
+          'created_at': '2026-10-06T10:00:00Z',
+          'authorization_url': 'https://checkout.flutterwave.com/captcha/verify/test',
+        }],
+      };
+    }
+    return super.get(path);
+  }
+  @override
+  Future<dynamic> post(String path, [Map<String, dynamic>? data, String? key]) async {
+    posts.add(path);
+    if (path == '/payments/test-payment/check') {
+      paid = true;
+      return {'status': 'SUCCESSFUL'};
+    }
+    throw StateError('Unexpected new payment request');
+  }
+}
+
 final captureKey = GlobalKey();
 Widget app(Api api, [Widget? child]) => RepaintBoundary(
   key: captureKey,
@@ -157,5 +193,34 @@ void main() {
     await tester.tap(find.byIcon(Icons.visibility));
     await tester.pump();
     expect(password().obscureText, isFalse);
+  });
+  testWidgets('pending test payment opens its existing confirmation and checks without a new charge', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    final launched = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(launcher, (call) async {
+          launched.add(call);
+          return true;
+        });
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(launcher, null));
+    final api = PaymentFixtureApi();
+    await tester.pumpWidget(app(api, const MaterialApp(home: OrderDetail(id: 'test-order'))));
+    await tester.pumpAndSettle();
+    expect(find.text('TEST PAYMENT · No real money is collected.'), findsOneWidget);
+    expect(find.text('Pay with mobile money'), findsNothing);
+    await tester.tap(find.text('Continue payment'));
+    await tester.pumpAndSettle();
+    expect(launched.single.arguments['url'], 'https://checkout.flutterwave.com/captcha/verify/test');
+    expect(api.posts, isEmpty);
+    await tester.tap(find.text('Check payment'));
+    await tester.pumpAndSettle();
+    expect(api.posts, ['/payments/test-payment/check']);
+    expect(find.text('Continue payment'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }
