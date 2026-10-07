@@ -6,7 +6,8 @@ import { Public,AuthGuard,Errors } from './security';
 import { AuthService,AuthController } from './auth';
 import { CatalogController } from './catalog';
 import { OrderService,OrderController } from './orders';
-import { Momo,PaymentService,PaymentController } from './payments';
+import { PaymentService,PaymentController } from './payments';
+import { Momo,Flutterwave,PaymentProviders } from './payment-providers';
 import { StudioService,StudioController,AppointmentsController } from './studio';
 import { OperationsController } from './operations';
 import { Workers } from './workers';
@@ -16,5 +17,5 @@ class HealthController {
  constructor(private db:Db){}
  @Get() @Public() async health(){try{await this.db.query('SELECT 1');return {status:'ok',service:'maison-munezero-api',revision:process.env.RENDER_GIT_COMMIT||process.env.APP_REVISION||null};}catch{throw new ServiceUnavailableException('Database unavailable');}}
 }
-@Module({controllers:[HealthController,AuthController,CatalogController,OrderController,PaymentController,StudioController,AppointmentsController,OperationsController,MediaController],providers:[Db,AuthService,OrderService,Momo,PaymentService,StudioService,Workers,{provide:APP_GUARD,useClass:AuthGuard},{provide:APP_FILTER,useClass:Errors}]})
+@Module({controllers:[HealthController,AuthController,CatalogController,OrderController,PaymentController,StudioController,AppointmentsController,OperationsController,MediaController],providers:[Db,AuthService,OrderService,Momo,Flutterwave,PaymentProviders,PaymentService,StudioService,Workers,{provide:APP_GUARD,useClass:AuthGuard},{provide:APP_FILTER,useClass:Errors}]})
 export class AppModule{}

@@ -27,17 +27,11 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: MOMO_BASE_URL
-        value: https://proxy.momoapi.mtn.com
-      - key: MOMO_TARGET_ENVIRONMENT
-        value: mtnrwanda
-      - key: MOMO_SUBSCRIPTION_KEY
+      - key: FLUTTERWAVE_MODE
+        value: live
+      - key: FLUTTERWAVE_SECRET_KEY
         sync: false
-      - key: MOMO_API_USER
-        sync: false
-      - key: MOMO_API_KEY
-        sync: false
-      - key: MOMO_CALLBACK_BASE
+      - key: FLUTTERWAVE_WEBHOOK_SECRET
         sync: false
       - key: SMTP_HOST
         sync: false

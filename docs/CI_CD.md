@@ -73,7 +73,7 @@ Set these **secrets** at repository scope or in the `production` environment:
 | `VERCEL_TOKEN` | Vercel deployment token with access to the configured project |
 
 The workflow creates/uses the `production` environment. Tokens remain in the
-job environment; scripts never log their values. MoMo, database, SMTP,
+job environment; scripts never log their values. Flutterwave, database, SMTP,
 Cloudinary and mobile signing credentials belong on their service/build
 platforms, not in Flutter or source code.
 
@@ -96,9 +96,12 @@ configured before building an APK intended for actual review.
    `DB_SSL=true` verifies the certificate for a remote database. A Render
    private-network database connection can use the corresponding documented
    private-network configuration instead. Keep credentials out of Git.
-4. Set `CORS_ORIGINS` to the actual website origin, `MOMO_CALLBACK_BASE` to the
-   public API origin and all approved live MoMo/SMTP/media values as described
-   in `LAUNCH.md`. Production startup rejects incomplete MoMo/SMTP settings.
+4. Set `CORS_ORIGINS` to the actual website origin, `FLUTTERWAVE_MODE=live`,
+   the approved v3 secret key and webhook secret, and SMTP/media values as
+   described in `LAUNCH.md`. Register the public webhook URL in Flutterwave.
+   Production startup rejects test mode, mismatched keys and incomplete
+   Flutterwave/SMTP settings. Retain `MOMO_*` values only while legacy payments
+   still require reconciliation.
 5. Keep auto-deploy **off**. GitHub Actions triggers the tested commit through
    Render's API, not a deploy hook that selects a newer untested commit.
 6. The pre-deploy command `node dist/migrate.js` applies migrations before the
@@ -227,7 +230,7 @@ attached or published by this job.
 Local deployment/release tests use provider doubles and prove the pipeline's
 decision logic. Actual GitHub Actions verification results are recorded in
 `VERIFICATION.md`. Render/Vercel credentials, live release publication and live
-MoMo still require configured production services.
+Flutterwave still require configured production services.
 
 Primary references used for this configuration:
 

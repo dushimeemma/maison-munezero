@@ -1,26 +1,26 @@
 # Verification record
 
-Prepared on 2 October 2026.
+Updated on 6 October 2026 for the Flutterwave payment switch. Hosted frontend/native checks for the payment branch are recorded on its pull request; the baseline results below remain identified separately where applicable.
 
 | Check | Result / boundary |
 | --- | --- |
 | NestJS TypeScript compilation | Passed |
-| API workflow suite | 17 tests passed, including public health/revision and database outage handling |
+| API and payment-provider suites | 32 tests passed locally against PGlite and provider HTTP fixtures; hosted CI also runs against PostgreSQL 17 |
 | Deployment and release automation suite | 26 tests passed: failure gates, revision matching, provider errors, packaging, reproducible release assets, publication ordering, retries, pagination and tag/asset conflicts |
 | GitHub Actions workflow lint | Passed with actionlint 1.7.12; YAML/JSON structure and deployment dependencies checked |
 | Production npm dependency audit | 0 known vulnerabilities reported at verification time |
-| Flutter static analysis | Passed, no issues |
-| Flutter UI tests | 4 tests passed, including mobile/desktop layout, staff navigation and password visibility |
-| Flutter release web compilation | Passed in JavaScript/CanvasKit mode, with icon shrinking disabled |
+| Flutter static analysis | Baseline passed; payment-branch verification runs in GitHub Actions |
+| Flutter UI tests | Baseline 4 tests passed; a fifth exercises confirmation-page handoff and payment checking without another charge |
+| Flutter release web compilation | Baseline passed in JavaScript/CanvasKit mode; payment-branch verification runs in GitHub Actions |
 | Browser runtime smoke test | Not completed: the execution environment prevents Chromium's process/socket startup |
 | Native Android compilation / device testing | Hosted baseline CI built the debug-signed review APK; physical-device testing is pending |
 | Native iOS compilation / device testing | Hosted baseline CI compiled the unsigned iOS release; signing and device testing are pending |
 | Docker build / deployment | Hosted baseline CI built the API container; live deployment is pending |
-| Live MTN, SMTP and Cloudinary transactions | Not performed; real merchant/service credentials were not provided |
+| Live Flutterwave/MTN, SMTP and Cloudinary transactions | Not performed; real merchant/service credentials were not provided |
 | Live Render/Vercel deployment | Not executed; service setup and deployment secrets are pending |
 | GitHub Actions execution | All five baseline verification jobs passed in [run 36998158035](https://github.com/dushimeemma/maison-munezero/actions/runs/36998158035), commit `79c1bb079e08434695a76f8f18cc6346e12bd931`; refer to the release PR for checks on the new configuration |
 | Production GitHub Release publication | Provider-double tests passed; no live production release has been published from this workspace |
-| Git repository | Application is on `develop`; release configuration is reviewed through `feat/production-releases` into `develop` before promotion to `main` |
+| Git repository | Payment switch is reviewed through `feat/flutterwave-payments` into `develop` before promotion to `main` |
 
 ## API coverage
 
@@ -28,7 +28,11 @@ The tests run actual NestJS HTTP handlers, role/session guards and SQL transacti
 
 Tests cover staff-role escalation rejection, unauthorised reads, submitted price rejection, delivery fee calculation, checkout retry identity, stock limits, one-time cancellation release, cash permissions/bounds/idempotency, pending-payment cancellation restrictions, duplicate/forged callbacks, independent MoMo settlement matching, custom quotation/assignment/measurements/deposit/fitting/balance, delivery reassignment and recipient codes, staff appointment collisions, refund review/limits/reference, competing checkouts for the last piece, invalid image uploads, account deletion, one-time email verification, production verification gate, password reset/session revocation, refresh rotation, role/deactivation revocation, report totals and audit records.
 
-MoMo is a controlled provider test double in the API suite. It proves application state handling, not MTN network acceptance, live merchant settlement or outage behaviour. Those require the merchant validation described in `LAUNCH.md`. The SMTP outbox worker, reservation-expiry worker and Cloudinary upload path also require deployment acceptance checks with real services.
+The workflow suite uses controlled Flutterwave and legacy MTN doubles. Separate adapter tests exercise authenticated v3 charge/verification request contracts, response parsing, redirect validation, test/live credential matching, mode changes and webhook secrets using HTTP fixtures. Workflow tests cover independent matching of reference, amount, currency, payer and transaction ID; duplicate settlement; lost-response handling without another charge; cash blocking during uncertainty; provider declines; and historical MTN reconciliation. These checks do not establish provider uptime, merchant approval or live settlement. Those require the merchant validation described in `LAUNCH.md`. The SMTP outbox worker, reservation-expiry worker and Cloudinary upload path also require deployment acceptance checks with real services.
+
+Native PostgreSQL runs one additional regression test for background polling: a backlog of unavailable legacy MTN payments must not prevent new Flutterwave payments from being checked. This test needs real advisory locks and nested database connections, so it is skipped in PGlite. The local result is 32 passed and one skipped; hosted PostgreSQL CI exercises all 33 tests.
+
+Local Flutter tooling was blocked by automatic approval review after it attempted cloud-instance metadata access. The repository's existing hosted CI provides frontend and native verification. CI uploads the resolved Flutter dependency lock alongside its build checks to support reproducible dependency review.
 
 ## Layout previews
 

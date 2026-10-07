@@ -22,7 +22,7 @@ export class Workers implements OnModuleInit,OnModuleDestroy {
   });
   // PostgreSQL advisory lease prevents duplicate background processing across API replicas.
   await this.db.tx(async sql=>{const lease=(await sql.query('SELECT pg_try_advisory_xact_lock(947372) locked')).rows[0];if(!lease.locked)return;
-   const pending=(await sql.query("SELECT reference FROM payments WHERE provider='MOMO' AND status='PENDING' AND (checked_at IS NULL OR checked_at<now()-interval '25 seconds') ORDER BY created_at LIMIT 10")).rows;
+   const pending=(await sql.query("SELECT reference FROM payments WHERE provider IN ('MOMO','FLUTTERWAVE') AND status='PENDING' AND (checked_at IS NULL OR checked_at<now()-interval '25 seconds') ORDER BY checked_at NULLS FIRST,created_at LIMIT 10")).rows;
    for(const p of pending)try{await this.payments.reconcile(p.reference);}catch{console.warn('Payment reconciliation deferred');}
   });
   if(process.env.SMTP_HOST){const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_SECURE==='true',auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}:undefined});

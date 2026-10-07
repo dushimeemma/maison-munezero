@@ -2,7 +2,7 @@
 
 Base path: `/api/v1`. JSON request bodies use camelCase; database-shaped responses generally use snake_case. Money is a whole-number RWF amount. Rwanda phone format is `2507XXXXXXXX`.
 
-Authenticated requests include `Authorization: Bearer <accessToken>`. Checkout, MoMo initiation and cash recording also require `Idempotency-Key: <UUID v4>`. Use a new key for a new action and keep the same key/payload when retrying after a network timeout.
+Authenticated requests include `Authorization: Bearer <accessToken>`. Checkout, mobile-money initiation and cash recording also require `Idempotency-Key: <UUID v4>`. Use a new key for a new action and keep the same key/payload when retrying after a network timeout.
 
 Errors return `{ "statusCode": 400, "message": "..." }`. Typical responses are 400 validation, 401 expired/missing session, 403 forbidden, 404 unavailable, 409 conflict and 503 unavailable integration. POST success is normally 201, other success normally 200. Request objects reject unknown fields.
 
@@ -67,10 +67,12 @@ For existing variants, retain `id`. Product edits cannot overwrite existing stoc
 | GET `/orders` | Own/assigned orders or operational list by role |
 | GET `/orders/:id` | Visible order, items, history, payments and delivery |
 | POST `/orders/:id/status` | `{status,note,pickupCode?}`; validated transition |
-| POST `/payments/orders/:id/momo` | `{phone,portion:"DUE"|"BALANCE"}` |
+| POST `/payments/orders/:id/mobile-money` | Flutterwave; `{phone,portion:"DUE"|"BALANCE"}`; returns `authorizationUrl`, `providerCurrency`, `sandbox` |
+| POST `/payments/orders/:id/momo` | Compatibility alias for the new Flutterwave flow |
 | POST `/payments/orders/:id/cash` | Sales; `{amount,receiptReference}` |
-| POST `/payments/:id/check` | Query MTN and reconcile |
-| POST `/payments/momo/callback/:reference` | Public wake-up signal; posted financial fields are ignored |
+| POST `/payments/:id/check` | Verify the original provider and reconcile |
+| POST `/payments/momo/callback/:reference` | Legacy MTN payments only; posted financial fields are ignored |
+| POST `/payments/flutterwave/webhook` | Public v3 webhook; requires matching `verif-hash`; verified by reference before settlement |
 | GET `/payments` | Finance/management payment list |
 
 Checkout request:

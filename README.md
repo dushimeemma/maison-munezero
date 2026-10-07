@@ -2,7 +2,7 @@
 
 Flutter web, Android and iOS application, backed by a NestJS API and PostgreSQL. The same app provides the customer store and staff workspaces; permissions are enforced on the server. This is a monorepo: `apps/flutter` and `apps/api` share version history, build commands and the delivery pipeline.
 
-**Delivery status:** implemented source with automated checks and a release web build. This is ready for business review and deployment configuration, not a claim that a live shop or store-signed mobile apps have been launched. Live MTN credentials, real catalogue data, hosting, mobile signing and device acceptance tests are still required. See `docs/LAUNCH.md` and `docs/VERIFICATION.md` for the precise boundaries.
+**Delivery status:** implemented source with automated checks and a release web build. This is ready for business review and deployment configuration, not a claim that a live shop or store-signed mobile apps have been launched. Live Flutterwave merchant approval and credentials, real catalogue data, hosting, mobile signing and device acceptance tests are still required. See `docs/LAUNCH.md` and `docs/VERIFICATION.md` for the precise boundaries.
 
 The Instagram reference could not be retrieved reliably. Products, prices, garment illustrations and the initial shop address are sample data, not verified Maison Munezero inventory or policies. Replace them through the workspace before launch. No Instagram assets have been copied.
 
@@ -11,7 +11,7 @@ The Instagram reference could not be retrieved reliably. Products, prices, garme
 - Browse and search products, dynamic categories, size/colour variants, available stock, wishlist and shopping bag.
 - Customer registration, sign-in, rotating sessions, email verification, password recovery, logout and account deletion.
 - Online checkout with delivery zones or shop pickup; server calculates price, tax and delivery before payment.
-- Walk-in shop sales through authorised sales staff; cash receipt recording and MTN MoMo requests.
+- Walk-in shop sales through authorised sales staff; cash receipt recording and Flutterwave mobile-money requests for MTN/Airtel wallets.
 - Order receipts as printable/downloadable PDF; these are not EBM fiscal invoices.
 - Bespoke request, designer/tailor assignment, quotation, customer acceptance, configurable deposit, measurements, production, fittings, balance payment and collection/delivery.
 - Consultation, measurement, fitting and collection appointments, with staff confirmation and overlap checks.
@@ -75,7 +75,7 @@ flutter run -d chrome --web-port=8080 --dart-define=API_BASE_URL=http://localhos
 
 Open the app, sign in using the admin account you configured, open Workspace → Users and create staff accounts. Customers register through Sign in → Create account.
 
-MoMo is disabled until API credentials are configured. The shop cash flow can be reviewed without MoMo credentials. Password recovery emails and image uploads need SMTP and Cloudinary settings respectively; in-app notifications work without SMTP.
+Mobile-money payment is disabled until Flutterwave v3 credentials are configured. Start with `FLUTTERWAVE_MODE=test` and your v3 test secret key; see `docs/LAUNCH.md` for the confirmation-page and webhook setup. The shop cash flow can be reviewed without payment-provider credentials. Password recovery emails and image uploads need SMTP and Cloudinary settings respectively; in-app notifications work without SMTP.
 
 ## Release web build and container
 
@@ -197,4 +197,4 @@ render.yaml           API service configuration with pre-deploy migrations
 vercel.json           Website project configuration; Actions owns deployment
 ```
 
-Do not commit `.env`, passwords, signing keys, SMTP secrets or MoMo credentials. No external repository, live payment account, domain or app-store listing was created by this delivery.
+Do not commit `.env`, passwords, signing keys, SMTP secrets or payment-provider credentials. No external repository, live payment account, domain or app-store listing was created by this delivery.
