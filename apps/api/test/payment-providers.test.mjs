@@ -36,10 +36,40 @@ test('only definitive validation rejections permit another charge',()=>fixture(a
  globalThis.fetch=async()=>{throw new Error('Lost response after provider accepted');};await assert.rejects(()=>gateway.submit(p));
 }));
 test('confirmation addresses reject insecure schemes, lookalike hosts and embedded credentials',()=>fixture(async({gateway,p,respond})=>{
- for(const redirect of ['javascript:alert(1)','http://checkout.flutterwave.com/pay','https://checkout.flutterwave.com.evil.test/pay','https://user:pass@checkout.flutterwave.com/pay','https://checkout.flutterwave.com:444/pay']){
+ for(const redirect of ['javascript:alert(1)','http://checkout.flutterwave.com/pay','https://checkout.flutterwave.com.evil.test/pay','https://evilflutterwave.com/pay','https://flutterwave.com@evil.test/pay','https://user:pass@checkout.flutterwave.com/pay','https://checkout.flutterwave.com:444/pay','https://ravemodal-dev-lookalike.herokuapp.com/pay','https://other.herokuapp.com/pay']){
   respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect}}});await assert.rejects(()=>gateway.submit(p),error=>error.getStatus()===503);
  }
  respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect:'https://ravemodal-dev.herokuapp.com/captcha/verify/test'}}});assert.ok((await gateway.submit(p)).authorizationUrl);
+}));
+test('provider-owned sandbox and live confirmation hosts and documented redirect fields are accepted',()=>fixture(async({gateway,p,respond})=>{
+ for(const host of ['ravesandboxapi.flutterwave.com','raveapi.flutterwave.com','checkout.flutterwave.com','payments.flutterwave.com','flutterwave.com']){
+  const redirect=`https://${host}/captcha/verify/private-test-token`;
+  for(const field of ['redirect','redirect_url']){
+   respond(200,{status:'success',meta:{authorization:{mode:'redirect',[field]:redirect}}});assert.equal((await gateway.submit(p)).authorizationUrl,redirect);
+   assert.equal(providerModule.paymentAuthorizationUrl(redirect),redirect);
+  }
+ }
+ // A malformed primary address cannot be overridden by a second address.
+ respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect:'javascript:alert(1)',redirect_url:'https://checkout.flutterwave.com/pay'}}});await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_ADDRESS');
+}));
+test('rejected-address diagnostics identify the validation reason and omit private URL components',()=>fixture(async({gateway,p,respond})=>{
+ const cases=[
+  [undefined,'MISSING_ADDRESS',undefined],['not a URL','MALFORMED_ADDRESS',undefined],
+  ['http://checkout.flutterwave.com/private-token','INSECURE_SCHEME','checkout.flutterwave.com'],
+  ['https://private-user:private-password@checkout.flutterwave.com/private-token','URL_CREDENTIALS','checkout.flutterwave.com'],
+  ['https://checkout.flutterwave.com:444/private-token','CUSTOM_PORT','checkout.flutterwave.com'],
+  ['https://unapproved.test/private-token?secret=private-secret','UNSUPPORTED_HOST','unapproved.test'],
+  [`https://${p.phone}.unapproved.test/private-token`,'UNSUPPORTED_HOST',undefined],
+  [`https://${process.env.FLUTTERWAVE_SECRET_KEY}.unapproved.test/private-token`,'UNSUPPORTED_HOST',undefined],
+ ];
+ for(const [redirect,issue,host] of cases){
+  respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect}}});await assert.rejects(()=>gateway.submit(p),error=>{
+   assert.equal(error.code,'CONFIRMATION_ADDRESS');assert.equal(error.confirmation.issue,issue);assert.equal(error.confirmation.host,host);
+   const diagnostic=JSON.stringify(error.confirmation);
+   for(const secret of [p.phone,process.env.FLUTTERWAVE_SECRET_KEY,'private-user','private-password','private-token','private-secret'])assert.ok(!diagnostic.includes(secret));
+   return true;
+  });
+ }
 }));
 test('test/live keys must match mode; v4 OAuth secrets are rejected',()=>fixture(async({gateway})=>{
  gateway.assertConfigured();assert.equal(gateway.sandbox(),true);assert.equal(gateway.currency(),'RWF');

@@ -43,7 +43,7 @@ export class PaymentService {
    if(error instanceof BadRequestException)await this.db.query("UPDATE payments SET status='FAILED',failure='Provider rejected the request',checked_at=now() WHERE id=$1 AND status='PENDING'",[p.id]);
    else{
     const diagnostic=error instanceof FlutterwaveUnavailable?error:undefined;
-    this.logger.warn(JSON.stringify({event:'PAYMENT_SUBMISSION_UNCERTAIN',paymentId:p.id,provider:p.provider,code:diagnostic?.code||'UNKNOWN',httpStatus:diagnostic?.httpStatus}));
+    this.logger.warn(JSON.stringify({event:'PAYMENT_SUBMISSION_UNCERTAIN',paymentId:p.id,provider:p.provider,code:diagnostic?.code||'UNKNOWN',httpStatus:diagnostic?.httpStatus,confirmation:diagnostic?.confirmation}));
     await this.db.query('UPDATE payments SET failure=$2 WHERE id=$1 AND status=\'PENDING\'',[p.id,diagnostic?.message||'Awaiting provider reconciliation. Do not pay again.']);
    }
   }

@@ -28,7 +28,7 @@ const failureMessages:Record<FlutterwaveFailureCode,string>={
  MODE_MISMATCH:'This payment requires its original Flutterwave test/live credentials',
 };
 export class FlutterwaveUnavailable extends ServiceUnavailableException {
- constructor(readonly code:FlutterwaveFailureCode,readonly httpStatus?:number){
+ constructor(readonly code:FlutterwaveFailureCode,readonly httpStatus?:number,readonly confirmation?:{issue:ConfirmationIssue;host?:string}){
   super(`${failureMessages[code]}${httpStatus===undefined?'':` (HTTP ${httpStatus})`}. Payment remains pending. Use Check payment or contact the shop; do not pay again.`);
  }
 }
@@ -67,8 +67,10 @@ export class Flutterwave implements MobileMoneyGateway {
   if(body?.status!=='success')throw new FlutterwaveUnavailable('INVALID_RESPONSE',r.status);
   const authorization=body.meta?.authorization;
   if(authorization?.mode==='redirect'){
-   const url=paymentAuthorizationUrl(authorization.redirect);
-   if(!url)throw new FlutterwaveUnavailable('CONFIRMATION_ADDRESS',r.status);
+   // Flutterwave v3 documents both redirect field names across its charge flows.
+   const address=authorization.redirect??authorization.redirect_url;
+   const url=paymentAuthorizationUrl(address);
+   if(!url)throw new FlutterwaveUnavailable('CONFIRMATION_ADDRESS',r.status,rejectedConfirmation(address,p));
    return {authorizationUrl:url};
   }
   if(body.data?.id)return {};
@@ -94,11 +96,29 @@ export class Flutterwave implements MobileMoneyGateway {
  }
 }
 
-// These hosts are published in Flutterwave's v3 Rwanda confirmation-page examples.
-// The API returns the address; never accept a redirect address from the customer.
+type ConfirmationIssue='MISSING_ADDRESS'|'MALFORMED_ADDRESS'|'INSECURE_SCHEME'|'URL_CREDENTIALS'|'CUSTOM_PORT'|'UNSUPPORTED_HOST';
+function confirmationAddress(value:unknown):{url?:URL;issue?:ConfirmationIssue}{
+ if(typeof value!=='string'||!value.trim())return {issue:'MISSING_ADDRESS'};
+ try{
+  const u=new URL(value);
+  const ownedHost=u.hostname==='flutterwave.com'||u.hostname.endsWith('.flutterwave.com');
+  const issue:ConfirmationIssue|undefined=u.protocol!=='https:'?'INSECURE_SCHEME':u.username||u.password?'URL_CREDENTIALS':u.port?'CUSTOM_PORT':!ownedHost&&u.hostname!=='ravemodal-dev.herokuapp.com'?'UNSUPPORTED_HOST':undefined;
+  return {url:u,issue};
+ }catch{return {issue:'MALFORMED_ADDRESS'};}
+}
+// Provider-supplied HTTPS addresses may use Flutterwave's domain and subdomains.
+// Keep the exact historical Rwanda host; Heroku is a shared hosting domain.
+// Never accept a redirect address from the customer.
 export function paymentAuthorizationUrl(value:unknown):string|null {
- if(typeof value!=='string')return null;
- try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['checkout.flutterwave.com','ravemodal-dev.herokuapp.com'].includes(u.hostname)?u.href:null;}catch{return null;}
+ const address=confirmationAddress(value);return address.issue||!address.url?null:address.url.href;
+}
+function rejectedConfirmation(value:unknown,p:any):{issue:ConfirmationIssue;host?:string}{
+ const address=confirmationAddress(value),host=address.url?.hostname;
+ const secrets=[process.env.FLUTTERWAVE_SECRET_KEY,p.phone,p.payer_email,p.payer_name].filter((v):v is string=>typeof v==='string'&&v.length>=3);
+ // A bounded public hostname helps diagnose host changes, without exposing paths,
+ // query tokens, userinfo or sensitive values embedded in a malformed hostname.
+ const safeHost=host&&host.length<=253&&/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/.test(host)&&!/flwseck|bearer|\d{7,}/i.test(host)&&!secrets.some(v=>host.includes(v.toLowerCase()))?host:undefined;
+ return {issue:address.issue||'MALFORMED_ADDRESS',...(safeHost?{host:safeHost}:{})};
 }
 
 // Retained only to reconcile MTN requests created before the switch.
