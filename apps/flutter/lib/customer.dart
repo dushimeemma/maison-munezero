@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 15947)
-Total output lines: 1561
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -519,7 +516,550 @@ class OrderDetail extends StatelessWidget {
                                 fontSize: 12,
                                 color: Colors.black54,
                               ),
-    …5947 tokens truncated…esigner staff account first.');
+                            ),
+                          ],
+                          if (o['delivery']?['driver_name'] != null)
+                            Text('Driver: ${o['delivery']['driver_name']}'),
+                        ],
+                      ),
+                    ),
+                    if (balance > 0 &&
+                        !['CANCELLED', 'COMPLETED'].contains(o['status']) &&
+                        (api.role == 'CUSTOMER' || api.sales))
+                      Panel(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Payment',
+                              style: TextStyle(fontSize: 22, color: ink),
+                            ),
+                            const SizedBox(height: 14),
+                            const Text(
+                              'Pay with MTN MoMo or Airtel Money. Continue to the payment confirmation page, then approve the request on your phone. Enter your PIN only in your wallet provider’s prompt.',
+                              style: TextStyle(
+                                height: 1.5,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            if (pending != null) ...[
+                              if (pending['sandbox'] == true)
+                                const Text(
+                                  'TEST PAYMENT · No real money is collected.',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              Text(
+                                pending['authorization_url'] != null
+                                    ? 'Return here after confirmation and check payment before starting another payment.'
+                                    : 'The payment confirmation link is unavailable. Use Check payment or contact the shop. Do not pay again.',
+                              ),
+                              if (pending['failure'] != null)
+                                Text('${pending['failure']}'),
+                              if (pending['authorization_url'] != null) ...[
+                                const SizedBox(height: 14),
+                                FilledButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final opened = await launchUrl(
+                                        Uri.parse('${pending['authorization_url']}'),
+                                        mode: LaunchMode.externalApplication,
+                                        webOnlyWindowName: '_blank',
+                                      );
+                                      if (!opened && context.mounted) {
+                                        toast(context, 'Could not open payment confirmation. Allow this site to open a new tab, then try Continue payment again.');
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) toast(context, e);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.open_in_new),
+                                  label: const Text('Continue payment'),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              FilledButton.icon(
+                                onPressed: () async {
+                                  try {
+                                    final p = await api.post(
+                                      '/payments/${pending['id']}/check',
+                                    );
+                                    reload();
+                                    if (context.mounted) {
+                                      toast(
+                                        context,
+                                        'Payment: ${label(p['status'])}',
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) toast(context, e);
+                                  }
+                                },
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Check payment'),
+                              ),
+                            ] else
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 12,
+                                children: [
+                                  FilledButton(
+                                    onPressed: () async {
+                                      final key = api.newKey();
+                                      await editForm(
+                                        context,
+                                        'Pay with mobile money',
+                                        [
+                                          FieldSpec(
+                                            'phone',
+                                            'MTN or Airtel number · 2507XXXXXXXX',
+                                            initial: '${o['customer_phone']}',
+                                          ),
+                                          const FieldSpec(
+                                            'portion',
+                                            'Payment amount',
+                                            initial: 'DUE',
+                                            options: ['DUE', 'BALANCE'],
+                                          ),
+                                        ],
+                                        (d) async {
+                                          final p = await api.post(
+                                            '/payments/orders/$id/mobile-money',
+                                            d,
+                                            key,
+                                          );
+                                          if (context.mounted) {
+                                            toast(
+                                              context,
+                                              p['failure'] ?? (p['authorizationUrl'] == null
+                                                  ? 'Payment submitted. Use Check payment to see its status.'
+                                                  : p['sandbox'] == true
+                                                      ? 'TEST payment started. Tap Continue payment to complete the test, then Check payment.'
+                                                      : 'Tap Continue payment, approve the wallet request, then Check payment.'),
+                                            );
+                                          }
+                                        },
+                                        button: 'Request payment',
+                                        note:
+                                            'Due pays the initial deposit, then the remaining balance. Balance pays everything outstanding.',
+                                      );
+                                      reload();
+                                    },
+                                    child: const Text('Pay with mobile money'),
+                                  ),
+                                  if (api.sales)
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        final key = api.newKey();
+                                        await editForm(
+                                          context,
+                                          'Record received cash',
+                                          [
+                                            FieldSpec(
+                                              'amount',
+                                              'Amount received (RWF)',
+                                              initial: '$balance',
+                                              number: true,
+                                            ),
+                                            const FieldSpec(
+                                              'receiptReference',
+                                              'Cash receipt reference',
+                                            ),
+                                          ],
+                                          (d) async {
+                                            await api.post(
+                                              '/payments/orders/$id/cash',
+                                              {
+                                                'amount': int.parse(
+                                                  d['amount']!,
+                                                ),
+                                                'receiptReference':
+                                                    d['receiptReference'],
+                                              },
+                                              key,
+                                            );
+                                          },
+                                          note:
+                                              'Confirm that the cash has been physically received before recording it.',
+                                        );
+                                        reload();
+                                      },
+                                      child: const Text('Record cash'),
+                                    ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    if (payments.isNotEmpty)
+                      Panel(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Payment history',
+                              style: TextStyle(fontSize: 20, color: ink),
+                            ),
+                            for (final p in payments)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  '${p['provider']} · ${rwf(p['amount'])}',
+                                ),
+                                subtitle: Text(
+                                  '${dateLabel(p['created_at'])}${p['failure'] != null ? '\n${p['failure']}' : ''}',
+                                ),
+                                trailing: StatusChip(p['status']),
+                              ),
+                          ],
+                        ),
+                      ),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        if (o['status'] == 'AWAITING_PAYMENT' &&
+                            (api.sales || api.role == 'CUSTOMER'))
+                          OutlinedButton(
+                            onPressed: () => statusForm(
+                              context,
+                              api,
+                              id,
+                              'CANCELLED',
+                              reload,
+                            ),
+                            child: const Text('Cancel order'),
+                          ),
+                        if (api.sales || api.studio) ...[
+                          if (o['status'] == 'CONFIRMED' &&
+                              o['channel'] == 'BESPOKE')
+                            FilledButton(
+                              onPressed: () => statusForm(
+                                context,
+                                api,
+                                id,
+                                'IN_PRODUCTION',
+                                reload,
+                              ),
+                              child: const Text('Start production'),
+                            ),
+                          if ([
+                            'CONFIRMED',
+                            'IN_PRODUCTION',
+                          ].contains(o['status']))
+                            FilledButton(
+                              onPressed: () =>
+                                  statusForm(context, api, id, 'READY', reload),
+                              child: const Text('Mark ready'),
+                            ),
+                          if (api.sales &&
+                              o['status'] == 'READY' &&
+                              o['fulfilment'] != 'DELIVERY')
+                            FilledButton(
+                              onPressed: () => statusForm(
+                                context,
+                                api,
+                                id,
+                                'COMPLETED',
+                                reload,
+                                code: o['fulfilment'] == 'PICKUP',
+                              ),
+                              child: const Text('Confirm collection'),
+                            ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Order journey',
+                      style: TextStyle(fontSize: 22, color: ink),
+                    ),
+                    const SizedBox(height: 16),
+                    Panel(
+                      child: Column(
+                        children: [
+                          for (final h in o['history'])
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(
+                                Icons.circle_outlined,
+                                size: 16,
+                              ),
+                              title: Text(label(h['status'])),
+                              subtitle: Text(
+                                '${h['note']}\n${dateLabel(h['created_at'])}',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  Widget detailLine(String name, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(name),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ],
+    ),
+  );
+}
+
+Future<void> statusForm(
+  BuildContext context,
+  Api api,
+  String id,
+  String status,
+  VoidCallback reload, {
+  bool code = false,
+}) async {
+  await editForm(
+    context,
+    label(status),
+    [
+      const FieldSpec('note', 'Note for order history'),
+      if (code) const FieldSpec('pickupCode', 'Collection code from customer'),
+    ],
+    (d) async {
+      await api.post('/orders/$id/status', {'status': status, ...d});
+    },
+  );
+  reload();
+}
+
+Future<bool?> requestDesign(BuildContext context) => editForm(
+  context,
+  'Your custom piece',
+  const [
+    FieldSpec('title', 'Project name'),
+    FieldSpec('garment', 'Garment type'),
+    FieldSpec('occasion', 'Occasion', required: false),
+    FieldSpec('budget', 'Budget (RWF)', required: false, number: true),
+    FieldSpec('dueDate', 'Preferred date · YYYY-MM-DD', required: false),
+    FieldSpec(
+      'description',
+      'Your idea, fabric & design preferences',
+      multiline: true,
+    ),
+    FieldSpec('referenceUrl', 'Reference image HTTPS link', required: false),
+  ],
+  (d) async {
+    final body = <String, dynamic>{
+      'title': d['title'],
+      'garment': d['garment'],
+      'description': d['description'],
+      if (d['occasion']!.isNotEmpty) 'occasion': d['occasion'],
+      if (d['budget']!.isNotEmpty) 'budget': int.parse(d['budget']!),
+      if (d['dueDate']!.isNotEmpty) 'dueDate': d['dueDate'],
+      if (d['referenceUrl']!.isNotEmpty) 'referenceUrl': d['referenceUrl'],
+    };
+    await context.read<Api>().post('/bespoke', body);
+  },
+  button: 'Send to the atelier',
+  note:
+      'Our team reviews your idea before quoting. Production starts after you accept the quotation and pay the deposit.',
+);
+
+class AtelierPage extends StatelessWidget {
+  const AtelierPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final api = context.watch<Api>();
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        PageHeading(
+          'The atelier',
+          'From your first idea to the final fitting. A piece made for you.',
+          action: FilledButton(
+            onPressed: () async {
+              if (!api.signedIn) await Navigator.pushNamed(context, '/auth');
+              if (api.signedIn && context.mounted) {
+                await requestDesign(context);
+              }
+            },
+            child: const Text('Start a design request'),
+          ),
+        ),
+        const Panel(
+          child: Text(
+            '1. Share your idea   →   2. Review your quotation   →   3. Pay your deposit\n4. Measurements & production   →   5. Fitting   →   6. Balance & collection',
+            style: TextStyle(height: 2, color: ink),
+          ),
+        ),
+        if (api.signedIn && (api.role == 'CUSTOMER' || api.studio))
+          BespokeList(key: ValueKey(api.role))
+        else
+          const EmptyState(
+            'Sign in as a customer to follow your custom designs.',
+          ),
+      ],
+    );
+  }
+}
+
+class BespokeList extends StatelessWidget {
+  const BespokeList({super.key});
+  @override
+  Widget build(BuildContext context) => RemoteView(
+    load: () => context.read<Api>().get('/bespoke'),
+    builder: (data, reload) => Column(
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: reload,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh'),
+          ),
+        ),
+        if ((data as List).isEmpty)
+          const EmptyState('Your design journey starts here.'),
+        for (final b in data)
+          Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${b['title']}',
+                        style: const TextStyle(fontSize: 21, color: ink),
+                      ),
+                    ),
+                    StatusChip(b['status']),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('${b['garment']} · ${b['customer_name']}'),
+                const SizedBox(height: 12),
+                Text(
+                  '${b['description']}',
+                  style: const TextStyle(height: 1.5),
+                ),
+                if (b['quote'] != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'Quotation: ${rwf(b['quote'])}\n${b['quote_notes']}\nPromised date: ${b['due_date']}',
+                      style: const TextStyle(height: 1.5),
+                    ),
+                  ),
+                if ((b['measurements'] as Map).isNotEmpty)
+                  Text(
+                    'Measurements (cm): ${jsonEncode(b['measurements'])}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                const SizedBox(height: 14),
+                BespokeActions(
+                  job: Map<String, dynamic>.from(b),
+                  reload: reload,
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class BespokeActions extends StatelessWidget {
+  final Map<String, dynamic> job;
+  final VoidCallback reload;
+  const BespokeActions({required this.job, required this.reload, super.key});
+  @override
+  Widget build(BuildContext context) {
+    final api = context.read<Api>();
+    final id = job['id'];
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        if (job['order_id'] != null)
+          FilledButton(
+            onPressed: () async {
+              await Navigator.pushNamed(context, '/orders/${job['order_id']}');
+              reload();
+            },
+            child: const Text('Open order & payment'),
+          ),
+        if (api.role == 'CUSTOMER' && job['status'] == 'QUOTED')
+          FilledButton(
+            onPressed: () async {
+              final s = await api.get('/settings');
+              if (!context.mounted) return;
+              final zones = s['deliveryZones'] as List;
+              await editForm(
+                context,
+                'Accept quotation',
+                [
+                  const FieldSpec(
+                    'fulfilment',
+                    'Receive your piece',
+                    initial: 'PICKUP',
+                    options: ['PICKUP', 'DELIVERY'],
+                  ),
+                  FieldSpec(
+                    'zoneId',
+                    'Delivery zone ID (if delivery)',
+                    required: false,
+                    options: zones.map((z) => '${z['id']}').toList(),
+                    optionLabels: {
+                      for (final x in zones) '${x['id']}': '${x['name']}',
+                    },
+                  ),
+                  const FieldSpec(
+                    'address',
+                    'Delivery address (if delivery)',
+                    required: false,
+                    multiline: true,
+                  ),
+                ],
+                (d) async {
+                  final order = await api.post('/bespoke/$id/accept', {
+                    'fulfilment': d['fulfilment'],
+                    if (d['fulfilment'] == 'DELIVERY') 'zoneId': d['zoneId'],
+                    if (d['fulfilment'] == 'DELIVERY') 'address': d['address'],
+                  });
+                  if (context.mounted) {
+                    toast(
+                      context,
+                      'Accepted. Deposit due: ${rwf(order['deposit_due'])}',
+                    );
+                  }
+                },
+                button: 'Accept & create order',
+                note:
+                    'Quoted garment price: ${rwf(job['quote'])}. Tax and delivery are added using shop settings. Deposit is shown on your order before payment.',
+              );
+              reload();
+            },
+            child: const Text('Accept quotation'),
+          ),
+        if (api.manager)
+          OutlinedButton(
+            onPressed: () async {
+              try {
+                final users = await api.get('/users') as List;
+                final designers = users
+                    .where((u) => u['active'] && u['role'] == 'DESIGNER')
+                    .toList();
+                final tailors = users
+                    .where((u) => u['active'] && u['role'] == 'TAILOR')
+                    .toList();
+                if (!context.mounted) return;
+                if (designers.isEmpty) {
+                  toast(context, 'Create a designer staff account first.');
                   return;
                 }
                 await editForm(
