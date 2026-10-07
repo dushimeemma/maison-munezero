@@ -48,7 +48,7 @@ export class PaymentService {
    }
   }
  }
- safe(p:any){return {id:p.id,orderId:p.order_id,provider:p.provider,amount:p.amount,status:p.status,failure:p.failure,submission:p.submission,providerCurrency:p.provider_currency,sandbox:p.sandbox,authorizationUrl:p.status==='PENDING'?paymentAuthorizationUrl(p.authorization_url):null};}
+ safe(p:any){return {id:p.id,orderId:p.order_id,provider:p.provider,amount:p.amount,status:p.status,failure:p.failure,submission:p.submission,providerCurrency:p.provider_currency,sandbox:p.sandbox,authorizationUrl:p.status==='PENDING'?paymentAuthorizationUrl(p.authorization_url,p.sandbox===true):null};}
  async reconcile(reference:string){
   const p=await one(this.db,'SELECT * FROM payments WHERE reference=$1',[reference]);if(!p||p.status!=='PENDING')return p?this.safe(p):{ok:true};
   // Record failed verification attempts too, so unavailable legacy requests cannot monopolise polling.

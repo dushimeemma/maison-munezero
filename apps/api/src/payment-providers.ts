@@ -69,7 +69,7 @@ export class Flutterwave implements MobileMoneyGateway {
   if(authorization?.mode==='redirect'){
    // Flutterwave v3 documents both redirect field names across its charge flows.
    const address=authorization.redirect??authorization.redirect_url;
-   const url=paymentAuthorizationUrl(address);
+   const url=paymentAuthorizationUrl(address,p.sandbox===true);
    if(!url)throw new FlutterwaveUnavailable('CONFIRMATION_ADDRESS',r.status,rejectedConfirmation(address,p));
    return {authorizationUrl:url};
   }
@@ -97,23 +97,26 @@ export class Flutterwave implements MobileMoneyGateway {
 }
 
 type ConfirmationIssue='MISSING_ADDRESS'|'MALFORMED_ADDRESS'|'INSECURE_SCHEME'|'URL_CREDENTIALS'|'CUSTOM_PORT'|'UNSUPPORTED_HOST';
-function confirmationAddress(value:unknown):{url?:URL;issue?:ConfirmationIssue}{
+function confirmationAddress(value:unknown,sandbox:boolean):{url?:URL;issue?:ConfirmationIssue}{
  if(typeof value!=='string'||!value.trim())return {issue:'MISSING_ADDRESS'};
  try{
   const u=new URL(value);
   const ownedHost=u.hostname==='flutterwave.com'||u.hostname.endsWith('.flutterwave.com');
-  const issue:ConfirmationIssue|undefined=u.protocol!=='https:'?'INSECURE_SCHEME':u.username||u.password?'URL_CREDENTIALS':u.port?'CUSTOM_PORT':!ownedHost&&u.hostname!=='ravemodal-dev.herokuapp.com'?'UNSUPPORTED_HOST':undefined;
+  const testCheckoutHost=sandbox===true&&u.hostname==='checkout-v2.dev-flutterwave.com';
+  const issue:ConfirmationIssue|undefined=u.protocol!=='https:'?'INSECURE_SCHEME':u.username||u.password?'URL_CREDENTIALS':u.port?'CUSTOM_PORT':!ownedHost&&!testCheckoutHost&&u.hostname!=='ravemodal-dev.herokuapp.com'?'UNSUPPORTED_HOST':undefined;
   return {url:u,issue};
  }catch{return {issue:'MALFORMED_ADDRESS'};}
 }
 // Provider-supplied HTTPS addresses may use Flutterwave's domain and subdomains.
+// The exact test checkout host is documented at
+// https://developer.flutterwave.com/docs/zambia-mobile-money and is test-only.
 // Keep the exact historical Rwanda host; Heroku is a shared hosting domain.
 // Never accept a redirect address from the customer.
-export function paymentAuthorizationUrl(value:unknown):string|null {
- const address=confirmationAddress(value);return address.issue||!address.url?null:address.url.href;
+export function paymentAuthorizationUrl(value:unknown,sandbox=false):string|null {
+ const address=confirmationAddress(value,sandbox);return address.issue||!address.url?null:address.url.href;
 }
 function rejectedConfirmation(value:unknown,p:any):{issue:ConfirmationIssue;host?:string}{
- const address=confirmationAddress(value),host=address.url?.hostname;
+ const address=confirmationAddress(value,p.sandbox===true),host=address.url?.hostname;
  const secrets=[process.env.FLUTTERWAVE_SECRET_KEY,p.phone,p.payer_email,p.payer_name].filter((v):v is string=>typeof v==='string'&&v.length>=3);
  // A bounded public hostname helps diagnose host changes, without exposing paths,
  // query tokens, userinfo or sensitive values embedded in a malformed hostname.

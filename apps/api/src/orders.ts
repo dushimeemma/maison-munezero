@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { randomInt } from 'node:crypto';
 import { Db, Sql, one, audit, notify } from './db';
 import { Actor, Allow, management, sales, finance, parse, uuid, phone, text, digest } from './security';
+import { paymentAuthorizationUrl } from './payment-providers';
 const checkout=z.object({items:z.array(z.object({variantId:uuid,quantity:z.number().int().min(1).max(50)}).strict()).min(1).max(50),fulfilment:z.enum(['DELIVERY','PICKUP','IN_SHOP']),zoneId:z.string().max(30).optional(),address:z.string().max(500).optional(),customerName:text(100),customerPhone:phone,notes:z.string().max(2000).optional(),customerId:uuid.optional(),channel:z.enum(['ONLINE','SHOP']).default('ONLINE')}).strict();
 export const orderTransitions:Record<string,string[]>={AWAITING_PAYMENT:['CONFIRMED','CANCELLED'],CONFIRMED:['READY','IN_PRODUCTION'],IN_PRODUCTION:['READY'],READY:['OUT_FOR_DELIVERY','COMPLETED'],OUT_FOR_DELIVERY:['COMPLETED'],COMPLETED:[],CANCELLED:[]};
 @Injectable()
@@ -58,6 +59,7 @@ export class OrderService {
   const items=(await sql.query('SELECT * FROM order_items WHERE order_id=$1',[id])).rows;
   const history=(await sql.query('SELECT status,note,created_at FROM order_history WHERE order_id=$1 ORDER BY created_at',[id])).rows;
   const payments=(await sql.query("SELECT id,provider,amount,status,failure,provider_currency,sandbox,CASE WHEN status='PENDING' THEN authorization_url ELSE NULL END authorization_url,created_at FROM payments WHERE order_id=$1 ORDER BY created_at DESC",[id])).rows;
+  for(const p of payments)p.authorization_url=paymentAuthorizationUrl(p.authorization_url,p.sandbox===true);
   const delivery=await one(sql,'SELECT d.*,u.name driver_name FROM deliveries d LEFT JOIN users u ON u.id=d.driver_id WHERE order_id=$1',[id]);
   if(a.role==='DRIVER')delete o.pickup_code;
   return {...o,items,history,payments,delivery};

@@ -52,6 +52,30 @@ test('provider-owned sandbox and live confirmation hosts and documented redirect
  // A malformed primary address cannot be overridden by a second address.
  respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect:'javascript:alert(1)',redirect_url:'https://checkout.flutterwave.com/pay'}}});await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_ADDRESS');
 }));
+test('documented dev checkout host is accepted only for stored test payments',()=>fixture(async({gateway,p,respond})=>{
+ const redirect='https://checkout-v2.dev-flutterwave.com/captcha/verify/lang-en/private-test-token';
+ for(const field of ['redirect','redirect_url']){
+  respond(200,{status:'success',meta:{authorization:{mode:'redirect',[field]:redirect}}});
+  assert.equal((await gateway.submit(p)).authorizationUrl,redirect);
+ }
+ assert.equal(providerModule.paymentAuthorizationUrl(redirect,true),redirect);
+ assert.equal(providerModule.paymentAuthorizationUrl(redirect,false),null);
+ assert.equal(providerModule.paymentAuthorizationUrl(redirect),null);
+ process.env.FLUTTERWAVE_MODE='live';process.env.FLUTTERWAVE_SECRET_KEY='FLWSECK-live-fixture-X';p.sandbox=false;
+ await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_ADDRESS'&&error.confirmation.issue==='UNSUPPORTED_HOST'&&error.confirmation.host==='checkout-v2.dev-flutterwave.com');
+}));
+test('test checkout host does not allow sibling hosts, lookalikes, insecure URLs or URL credentials',()=>fixture(async({gateway,p,respond})=>{
+ for(const redirect of [
+  'https://checkout-v2.dev-flutterwave.com.evil.test/pay','https://evildev-flutterwave.com/pay',
+  'https://other.dev-flutterwave.com/pay','https://sub.checkout-v2.dev-flutterwave.com/pay',
+  'http://checkout-v2.dev-flutterwave.com/pay','https://user:pass@checkout-v2.dev-flutterwave.com/pay',
+  'https://checkout-v2.dev-flutterwave.com:444/pay','https://checkout-v2.dev-flutterwave.com@evil.test/pay'
+ ]){
+  assert.equal(providerModule.paymentAuthorizationUrl(redirect,true),null);
+  respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect}}});
+  await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_ADDRESS');
+ }
+}));
 test('rejected-address diagnostics identify the validation reason and omit private URL components',()=>fixture(async({gateway,p,respond})=>{
  const cases=[
   [undefined,'MISSING_ADDRESS',undefined],['not a URL','MALFORMED_ADDRESS',undefined],

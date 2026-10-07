@@ -219,19 +219,32 @@ test('submission diagnostics remain pending, log only safe metadata, and read-on
   for(const value of privateValue.split(' '))assert.ok(!JSON.stringify(logs).includes(value));
  }finally{provider.submit=original;logger.warn=originalWarn;}
 });
-test('a Flutterwave sandbox confirmation domain is stored and returned without another submission on retry',async()=>{
+test('Flutterwave sandbox confirmation domains reach payment and order responses without another submission on retry',async()=>{
  const original=provider.submit,originalFetch=globalThis.fetch,oldKey=process.env.FLUTTERWAVE_SECRET_KEY,oldMode=process.env.FLUTTERWAVE_MODE;
  process.env.FLUTTERWAVE_SECRET_KEY='FLWSECK_TEST-fixture-X';process.env.FLUTTERWAVE_MODE='test';
- const url='https://ravesandboxapi.flutterwave.com/captcha/verify/private-test-token';
  const gateway=new Flutterwave();provider.submit=async p=>{provider.calls++;return gateway.submit(p);};
- let charges=0;globalThis.fetch=async()=>{charges++;return new Response(JSON.stringify({status:'success',meta:{authorization:{mode:'redirect',redirect:url}}}),{status:200});};
  try{
-  const o=await paymentOrder(),key=randomUUID(),body={phone:'250780000001'};
-  const result=await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key);assert.equal(result.status,201);
-  const p=result.body;assert.equal(p.submission,'SENT');assert.equal(p.authorizationUrl,url);assert.equal(p.failure,null);
-  const detail=(await call(customer,'get',`/orders/${o.id}`)).body;assert.equal(detail.payments[0].authorization_url,url);
-  assert.equal((await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key)).body.id,p.id);assert.equal(charges,1);
+  for(const host of ['ravesandboxapi.flutterwave.com','checkout-v2.dev-flutterwave.com']){
+   const url=`https://${host}/captcha/verify/lang-en/private-test-token`;
+   let charges=0;globalThis.fetch=async()=>{charges++;return new Response(JSON.stringify({status:'success',meta:{authorization:{mode:'redirect',redirect:url}}}),{status:200});};
+   const o=await paymentOrder(),key=randomUUID(),body={phone:'250780000001'};
+   const result=await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key);assert.equal(result.status,201);
+   const p=result.body;assert.equal(p.submission,'SENT');assert.equal(p.authorizationUrl,url);assert.equal(p.failure,null);
+   const detail=(await call(customer,'get',`/orders/${o.id}`)).body;assert.equal(detail.payments[0].authorization_url,url);
+   assert.equal((await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key)).body.id,p.id);assert.equal(charges,1);
+   assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).body.authorizationUrl,url);assert.equal(charges,1);
+  }
  }finally{provider.submit=original;globalThis.fetch=originalFetch;if(oldKey===undefined)delete process.env.FLUTTERWAVE_SECRET_KEY;else process.env.FLUTTERWAVE_SECRET_KEY=oldKey;if(oldMode===undefined)delete process.env.FLUTTERWAVE_MODE;else process.env.FLUTTERWAVE_MODE=oldMode;}
+});
+test('live payment and order responses cannot hand off to the test checkout host',async()=>{
+ const o=await paymentOrder(),url='https://checkout-v2.dev-flutterwave.com/captcha/verify/private-test-token';
+ const raw=(await sql.query("INSERT INTO payments(order_id,provider,amount,provider_currency,phone,actor_id,submission,sandbox,authorization_url) VALUES($1,'FLUTTERWAVE',$2,'RWF',$3,$4,'SENT',false,$5) RETURNING *",[o.id,o.total,'250780000001',customer.id,url])).rows[0];
+ // The stored payment mode, rather than the current environment, governs the handoff.
+ assert.equal(provider.sandbox(),true);
+ const before=provider.calls,checked=await call(customer,'post',`/payments/${raw.id}/check`,{});
+ assert.equal(checked.status,201);assert.equal(checked.body.sandbox,false);assert.equal(checked.body.authorizationUrl,null);
+ assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.payments[0].authorization_url,null);
+ assert.equal(provider.calls,before);assert.equal((await sql.query('SELECT authorization_url FROM payments WHERE id=$1',[raw.id])).rows[0].authorization_url,url);
 });
 test('signed duplicate completion webhooks settle exactly once; private checks remain role restricted',async()=>{
  const o=await paymentOrder(),p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,{phone:'250780000001'},randomUUID())).body;
