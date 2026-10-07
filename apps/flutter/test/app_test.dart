@@ -59,7 +59,8 @@ class FixtureApi extends Api {
 }
 
 class PaymentFixtureApi extends FixtureApi {
-  PaymentFixtureApi() : super('CUSTOMER');
+  PaymentFixtureApi({this.confirmationAvailable = true}) : super('CUSTOMER');
+  final bool confirmationAvailable;
   final posts = <String>[];
   bool paid = false;
   int orderLoads = 0;
@@ -79,7 +80,9 @@ class PaymentFixtureApi extends FixtureApi {
           'id': 'test-payment', 'provider': 'FLUTTERWAVE', 'amount': 1500,
           'status': paid ? 'SUCCESSFUL' : 'PENDING', 'sandbox': true,
           'created_at': '2026-10-06T10:00:00Z',
-          'authorization_url': 'https://checkout.flutterwave.com/captcha/verify/test',
+          'authorization_url': confirmationAvailable
+              ? 'https://checkout.flutterwave.com/captcha/verify/test'
+              : null,
         }],
       };
     }
@@ -226,6 +229,22 @@ void main() {
     expect(api.paid, isTrue);
     expect(api.orderLoads, 2);
     expect(find.text('Continue payment'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('pending payment without a confirmation link offers a status check without another charge', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = PaymentFixtureApi(confirmationAvailable: false);
+    await tester.pumpWidget(app(api, const MaterialApp(home: OrderDetail(id: 'test-order'))));
+    await tester.pumpAndSettle();
+    expect(find.text('Continue payment'), findsNothing);
+    expect(find.text('Pay with mobile money'), findsNothing);
+    expect(find.text('The payment confirmation link is unavailable. Use Check payment or contact the shop. Do not pay again.'), findsOneWidget);
+    await tester.tap(find.text('Check payment'));
+    await tester.pumpAndSettle();
+    expect(api.posts, ['/payments/test-payment/check']);
     expect(tester.takeException(), isNull);
   });
 }

@@ -11,6 +11,8 @@ import appModule from '../dist/app.js';
 import dbModule from '../dist/db.js';
 import paymentModule from '../dist/payments.js';
 import workerModule from '../dist/workers.js';
+import providerModule from '../dist/payment-providers.js';
+import diagnosticsModule from '../dist/check-payments.js';
 const {AppModule}=appModule,{Db}=dbModule,{Momo,Flutterwave}=paymentModule;
 let app,sql,db,engine,admin,customer,other,designer,tailor,driver,driver2,accountant,product,variant;
 const provider=Object.assign(new Flutterwave(),{assertConfigured(){},calls:0,results:new Map(),async submit(){this.calls++;return {authorizationUrl:'https://checkout.flutterwave.com/captcha/verify/test'};},async status(p){return this.results.get(p.reference)||null;}});
@@ -197,6 +199,25 @@ test('lost submission response cannot trigger resubmission, cash collection or a
   assert.equal((await call(admin,'post',`/payments/orders/${o.id}/cash`,{amount:o.total,receiptReference:'TEST'},randomUUID())).status,409);
   provider.results.set(raw.reference,verified(raw));assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).body.status,'SUCCESSFUL');
  }finally{provider.submit=original;}
+});
+test('submission diagnostics remain pending, log only safe metadata, and read-only checks cannot charge again',async()=>{
+ const o=await paymentOrder(),key=randomUUID(),body={phone:'250780000001'},original=provider.submit;
+ const logger=app.get(paymentModule.PaymentService).logger,originalWarn=logger.warn,logs=[];
+ logger.warn=message=>logs.push(JSON.parse(message));
+ provider.submit=async()=>{provider.calls++;throw new providerModule.FlutterwaveUnavailable('AUTHENTICATION',401);};
+ try{
+  const p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key)).body;
+  assert.equal(p.status,'PENDING');assert.equal(p.submission,'UNCERTAIN');assert.equal(p.authorizationUrl,null);assert.match(p.failure,/authentication failed/);assert.match(p.failure,/HTTP 401/);
+  assert.deepEqual(logs,[{event:'PAYMENT_SUBMISSION_UNCERTAIN',paymentId:p.id,provider:'FLUTTERWAVE',code:'AUTHENTICATION',httpStatus:401}]);
+  const before=provider.calls,storedBefore=(await sql.query('SELECT * FROM payments WHERE id=$1',[p.id])).rows[0];
+  const reports=await diagnosticsModule.inspectPendingFlutterwave(sql,provider);assert.ok(reports.some(r=>r.paymentId===p.id));assert.equal(provider.calls,before);
+  const storedAfter=(await sql.query('SELECT * FROM payments WHERE id=$1',[p.id])).rows[0];assert.deepEqual(storedAfter,storedBefore);
+  assert.equal((await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,body,key)).body.id,p.id);assert.equal(provider.calls,before);
+  const privateValue='private-token private@example.test 250780000001';provider.submit=async()=>{throw new Error(privateValue);};
+  const otherOrder=await paymentOrder(),otherPayment=(await call(customer,'post',`/payments/orders/${otherOrder.id}/mobile-money`,body,randomUUID())).body;
+  assert.equal(otherPayment.failure,'Awaiting provider reconciliation. Do not pay again.');assert.equal(logs.at(-1).code,'UNKNOWN');
+  for(const value of privateValue.split(' '))assert.ok(!JSON.stringify(logs).includes(value));
+ }finally{provider.submit=original;logger.warn=originalWarn;}
 });
 test('signed duplicate completion webhooks settle exactly once; private checks remain role restricted',async()=>{
  const o=await paymentOrder(),p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,{phone:'250780000001'},randomUUID())).body;

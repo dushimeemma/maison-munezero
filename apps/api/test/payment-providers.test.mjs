@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import providerModule from '../dist/payment-providers.js';
-const {Flutterwave,Momo}=providerModule;
+const {Flutterwave,Momo,FlutterwaveUnavailable}=providerModule;
 
 async function fixture(run){
  const originalFetch=globalThis.fetch,previous={...process.env};
@@ -63,4 +63,23 @@ test('historical MTN verification retains its original provider UUID and externa
  const gateway=new Momo();let count=0;
  globalThis.fetch=async(url)=>{calls.push({url:String(url)});count++;return new Response(JSON.stringify(count===1?{access_token:'fixture',expires_in:3600}:{status:'SUCCESSFUL',externalId:p.id,amount:'1500',currency:'EUR',payer:{partyId:p.phone},financialTransactionId:'legacy-123'}),{status:200});};
  const result=await gateway.status(p);assert.ok(calls[1].url.endsWith(`/collection/v1_0/requesttopay/${p.reference}`));assert.equal(result.reference,p.id);assert.equal(result.currency,'EUR');assert.equal(result.transactionId,'legacy-123');
+}));
+
+test('uncertain submissions expose fixed diagnostic codes and HTTP status without provider bodies',()=>fixture(async({gateway,p,respond})=>{
+ const privateBody={status:'error',message:`Bearer ${process.env.FLUTTERWAVE_SECRET_KEY} ${p.phone} ${p.payer_email} https://checkout.flutterwave.com/private-token`};
+ for(const [httpStatus,code] of [[401,'AUTHENTICATION'],[403,'ACCESS_DENIED'],[429,'RATE_LIMITED'],[500,'PROVIDER_UNAVAILABLE'],[409,'HTTP_ERROR']]){
+  respond(httpStatus,privateBody);
+  for(const method of ['submit','status'])await assert.rejects(()=>gateway[method](p),error=>{
+   assert.ok(error instanceof FlutterwaveUnavailable);assert.equal(error.code,code);assert.equal(error.httpStatus,httpStatus);assert.equal(error.getStatus(),503);
+   for(const value of [process.env.FLUTTERWAVE_SECRET_KEY,p.phone,p.payer_email,'private-token'])assert.ok(!JSON.stringify(error.getResponse()).includes(value));
+   return true;
+  });
+ }
+ globalThis.fetch=async()=>{throw new Error(privateBody.message);};await assert.rejects(()=>gateway.submit(p),error=>error.code==='NETWORK'&&!error.message.includes(p.phone));
+}));
+test('invalid JSON, missing confirmation and unsupported addresses remain distinguishable without leaking response data',()=>fixture(async({gateway,p,respond})=>{
+ globalThis.fetch=async()=>new Response('private-provider-body',{status:200});await assert.rejects(()=>gateway.submit(p),error=>error.code==='INVALID_RESPONSE'&&!error.message.includes('private-provider-body'));
+ respond(200,null);await assert.rejects(()=>gateway.submit(p),error=>error.code==='INVALID_RESPONSE');
+ respond(200,{status:'success'});await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_MISSING');
+ respond(200,{status:'success',meta:{authorization:{mode:'redirect',redirect:'https://unapproved.test/private-token'}}});await assert.rejects(()=>gateway.submit(p),error=>error.code==='CONFIRMATION_ADDRESS'&&!error.message.includes('private-token'));
 }));

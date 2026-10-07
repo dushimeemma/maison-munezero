@@ -32,7 +32,7 @@ Keep the database volume. Migration `002_flutterwave_payments.sql` preserves exi
 
 In the Flutterwave dashboard, configure the webhook URL as `https://YOUR_PUBLIC_API_HOST/api/v1/payments/flutterwave/webhook`, set its secret hash to the same `FLUTTERWAVE_WEBHOOK_SECRET`, and enable webhook retries. The v3 `verif-hash` header is checked using a constant-time comparison. The posted status/amount is never accepted as financial truth: the server calls the authenticated verification API by its stored `tx_ref`, checks reference, exact amount, currency and payer, then settles once under database locks. Polling every 30 seconds and the customer's **Check payment** button also work when webhooks cannot reach a local server.
 
-Checkout: choose **Pay with mobile money**, enter a Rwanda wallet number in `2507XXXXXXXX` format, choose due/deposit or full balance, then tap **Continue payment**. A separate browser tab opens on web; iOS/Android open the system browser. Complete the confirmation page, approve your wallet's prompt when using live mode, return to the app and tap **Check payment**. The application never asks for a wallet PIN. Reopening the confirmation page does not create another charge. Allow the website to open the confirmation tab if your browser blocks it.
+Checkout: choose **Pay with mobile money**, enter a Rwanda wallet number in `2507XXXXXXXX` format, choose due/deposit or full balance, and tap **Request payment**. After the form closes, tap **Continue payment** in the order's Payment section. That button appears only when a confirmation link was received. A separate browser tab opens on web; iOS/Android open the system browser. Complete the confirmation page, approve your wallet's prompt when using live mode, return to the app and tap **Check payment**. The application never asks for a wallet PIN. Reopening the confirmation page does not create another charge. Allow the website to open the confirmation tab if your browser blocks it.
 
 The email and customer name are snapshotted from the order's customer account. Walk-in orders without an attached customer use the sales account's email for the required provider contact field; attach a customer account when their own email should receive provider communications.
 
@@ -47,6 +47,33 @@ CORS_ORIGINS=https://YOUR_WEB_HOST
 ```
 
 If submission times out, do not create another payment, switch providers, or collect cash for that order. Flutterwave requests are not automatically resubmitted after uncertain submission: absence from verification can be temporary. Keep the order pending, verify by reference and investigate through the merchant dashboard/support. Release a pending payment only after confirming its final outcome; do not change payment rows merely to remove a pending warning. The app does not implement an automatic cross-provider fallback.
+
+### Missing confirmation link or uncertain request
+
+`PENDING / UNCERTAIN` without an authorization URL means the server did not record a usable confirmation response. It does not establish whether Flutterwave accepted the charge. The original implementation stored a generic reconciliation message, so older requests cannot recover their original submission error from that message.
+
+After pulling this branch, rebuild and recreate the API, then inspect the existing requests:
+
+```bash
+git pull --ff-only
+docker compose build api
+docker compose up -d --force-recreate api
+docker compose exec api node dist/check-payments.js
+```
+
+This command reads the latest five pending Flutterwave requests and performs only authenticated **GET** verification by their stored reference. PostgreSQL enforces a read-only transaction; no payment is submitted, retried or updated. It prints internal payment references, mode/configuration booleans and fixed diagnostic codes, without secret keys, payer contacts, confirmation URLs or raw provider bodies. A successful verification still needs the app's **Check payment** or its background worker to apply settlement after validating the stored payment.
+
+| Diagnostic | Next action |
+| --- | --- |
+| `matchingV3KeyConfigured: false` | Configure a matching v3 key and `test`/`live` mode in the API environment, then recreate the API. |
+| `AUTHENTICATION`, HTTP 401 | Check the v3 secret key in the Flutterwave dashboard for this environment; this reports the current verification failure. |
+| `ACCESS_DENIED`, HTTP 403 | Ask Flutterwave to confirm merchant permissions for the operation. |
+| `MODE_MISMATCH` | Verify with the original payment's mode and credentials. |
+| `NETWORK`, `RATE_LIMITED`, `PROVIDER_UNAVAILABLE` | Keep the request pending and repeat verification when connectivity/provider service recovers. |
+| `NOT_FOUND_OR_NOT_YET_AVAILABLE` | Check the stored reference in the merchant dashboard/support. Absence does not prove that a timed-out charge failed. |
+| `matchesStoredPayment: false` | Merchant review is required; the app must not credit this result. |
+
+Future uncertain submissions retain a fixed diagnostic message in the Payment section and emit a `PAYMENT_SUBMISSION_UNCERTAIN` log with payment ID, provider, code and HTTP status. View these logs with `docker compose logs --tail=100 api`. `CONFIRMATION_ADDRESS` or `CONFIRMATION_MISSING` identifies an unusable/missing handoff response; do not invent a confirmation URL or replay the charge. The diagnostic command checks current verification and cannot reconstruct an earlier submission error. Do not clear pending rows or reset the database to enable another attempt.
 
 Existing `MOMO` payments continue using their original MTN status API and stored currency. Keep the original `MOMO_*` settings on the server until those payments are reconciled. New requests, including the older `/orders/:id/momo` compatibility route, use Flutterwave. Historical cash payments remain cash. Do not switch test/live credentials with pending transactions from the previous mode; finish reconciliation first or keep separate deployments/databases.
 

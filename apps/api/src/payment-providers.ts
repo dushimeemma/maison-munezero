@@ -12,6 +12,31 @@ export interface MobileMoneyGateway {
  status(payment:any):Promise<ProviderResult|null>;
 }
 
+// Only fixed messages and numeric HTTP statuses may leave the provider boundary.
+// Never persist or log raw provider bodies, fetch errors, keys or confirmation URLs.
+export type FlutterwaveFailureCode='AUTHENTICATION'|'ACCESS_DENIED'|'RATE_LIMITED'|'PROVIDER_UNAVAILABLE'|'HTTP_ERROR'|'NETWORK'|'INVALID_RESPONSE'|'CONFIRMATION_ADDRESS'|'CONFIRMATION_MISSING'|'MODE_MISMATCH';
+const failureMessages:Record<FlutterwaveFailureCode,string>={
+ AUTHENTICATION:'Flutterwave authentication failed. Ask the shop to check its v3 secret key',
+ ACCESS_DENIED:'Flutterwave denied access. Ask the shop to check its merchant permissions',
+ RATE_LIMITED:'Flutterwave is limiting requests',
+ PROVIDER_UNAVAILABLE:'Flutterwave is temporarily unavailable',
+ HTTP_ERROR:'Flutterwave could not process the request',
+ NETWORK:'The server could not receive a Flutterwave response',
+ INVALID_RESPONSE:'Flutterwave returned an unreadable or unexpected response',
+ CONFIRMATION_ADDRESS:'Flutterwave returned an unsupported confirmation address',
+ CONFIRMATION_MISSING:'Flutterwave did not return a confirmation link',
+ MODE_MISMATCH:'This payment requires its original Flutterwave test/live credentials',
+};
+export class FlutterwaveUnavailable extends ServiceUnavailableException {
+ constructor(readonly code:FlutterwaveFailureCode,readonly httpStatus?:number){
+  super(`${failureMessages[code]}${httpStatus===undefined?'':` (HTTP ${httpStatus})`}. Payment remains pending. Use Check payment or contact the shop; do not pay again.`);
+ }
+}
+function httpFailure(status:number){
+ const code:FlutterwaveFailureCode=status===401?'AUTHENTICATION':status===403?'ACCESS_DENIED':status===429?'RATE_LIMITED':status>=500?'PROVIDER_UNAVAILABLE':'HTTP_ERROR';
+ return new FlutterwaveUnavailable(code,status);
+}
+
 @Injectable()
 export class Flutterwave implements MobileMoneyGateway {
  readonly code='FLUTTERWAVE'; readonly recoverMissing=false;
@@ -25,36 +50,39 @@ export class Flutterwave implements MobileMoneyGateway {
  }
  private headers(){this.assertConfigured();return {'Content-Type':'application/json',Accept:'application/json',Authorization:`Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`};}
  private assertPaymentMode(p:any){
-  if(p.sandbox!==this.sandbox())throw new ServiceUnavailableException('This payment was created in a different Flutterwave mode. Reconcile it with its original credentials.');
+  if(p.sandbox!==this.sandbox())throw new FlutterwaveUnavailable('MODE_MISMATCH');
  }
  async submit(p:any){
   this.assertPaymentMode(p);
+  const headers=this.headers();
   const r=await fetch('https://api.flutterwave.com/v3/charges?type=mobile_money_rwanda',{
-   method:'POST',headers:this.headers(),signal:AbortSignal.timeout(15000),
+   method:'POST',headers,signal:AbortSignal.timeout(15000),
    body:JSON.stringify({amount:p.amount,currency:p.provider_currency,tx_ref:p.reference,order_id:p.id,
     phone_number:p.phone,email:p.payer_email,fullname:p.payer_name,meta:{payment_id:p.id,order_id:p.order_id}})
-  });
+  }).catch(()=>{throw new FlutterwaveUnavailable('NETWORK');});
   // Only explicit validation failures permit a new attempt. Unknown outcomes stay pending.
   if(r.status===400||r.status===422)throw new BadRequestException('Flutterwave rejected the payment request. Check the wallet number or contact the shop.');
-  if(!r.ok)throw new ServiceUnavailableException('Flutterwave payment submission is uncertain. Check payment before trying again.');
-  const body:any=await r.json();
-  if(body.status!=='success')throw new ServiceUnavailableException('Flutterwave payment submission is uncertain.');
+  if(!r.ok)throw httpFailure(r.status);
+  const body:any=await r.json().catch(()=>null);
+  if(body?.status!=='success')throw new FlutterwaveUnavailable('INVALID_RESPONSE',r.status);
   const authorization=body.meta?.authorization;
   if(authorization?.mode==='redirect'){
    const url=paymentAuthorizationUrl(authorization.redirect);
-   if(!url)throw new ServiceUnavailableException('Flutterwave returned an unsupported confirmation address. Contact the shop and check payment.');
+   if(!url)throw new FlutterwaveUnavailable('CONFIRMATION_ADDRESS',r.status);
    return {authorizationUrl:url};
   }
   if(body.data?.id)return {};
-  throw new ServiceUnavailableException('Flutterwave did not return payment confirmation details. Check payment.');
+  throw new FlutterwaveUnavailable('CONFIRMATION_MISSING',r.status);
  }
  async status(p:any):Promise<ProviderResult|null>{
   this.assertPaymentMode(p);
-  const r=await fetch(`https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${encodeURIComponent(p.reference)}`,{headers:this.headers(),signal:AbortSignal.timeout(15000)});
+  const headers=this.headers();
+  const r=await fetch(`https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${encodeURIComponent(p.reference)}`,{headers,signal:AbortSignal.timeout(15000)}).catch(()=>{throw new FlutterwaveUnavailable('NETWORK');});
   const body:any=await r.json().catch(()=>null);
   // An absent transaction never proves a timed-out charge was not accepted.
   if(r.status===404||r.status===400&&body?.status==='error'&&/^no transaction (?:was )?found/i.test(body.message||''))return null;
-  if(!r.ok||body?.status!=='success'||!body.data)throw new ServiceUnavailableException('Flutterwave verification is unavailable. Payment remains pending.');
+  if(!r.ok)throw httpFailure(r.status);
+  if(body?.status!=='success'||!body.data)throw new FlutterwaveUnavailable('INVALID_RESPONSE',r.status);
   const d=body.data;
   return {status:String(d.status).toUpperCase(),reference:d.tx_ref,amount:Number(d.amount),currency:d.currency,
    phone:d.customer?.phone_number||undefined,email:d.customer?.email,transactionId:d.id==null?undefined:String(d.id)};

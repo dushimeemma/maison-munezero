@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Post, Param, Req, Injectable, ConflictException, BadRequestException, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Post, Param, Req, Injectable, ConflictException, BadRequestException, HttpCode, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { Db, Sql, one, audit, notify } from './db';
 import { Actor, Allow, Public, sales, finance, parse, uuid, money, phone, text } from './security';
 import { OrderService } from './orders';
-import { Flutterwave, PaymentProviders, paymentAuthorizationUrl } from './payment-providers';
+import { Flutterwave, FlutterwaveUnavailable, PaymentProviders, paymentAuthorizationUrl } from './payment-providers';
 export { Flutterwave, Momo } from './payment-providers';
 @Injectable()
 export class PaymentService {
+ private readonly logger=new Logger(PaymentService.name);
  constructor(private db:Db,private orders:OrderService,private providers:PaymentProviders){}
  async start(id:string,a:Actor,body:any,key:string){
   const gateway=this.providers.current();gateway.assertConfigured();
@@ -40,7 +41,11 @@ export class PaymentService {
    await this.db.query("UPDATE payments SET submission='SENT',authorization_url=$2,failure=NULL WHERE id=$1 AND status='PENDING'",[p.id,result.authorizationUrl||null]);
   }catch(error){
    if(error instanceof BadRequestException)await this.db.query("UPDATE payments SET status='FAILED',failure='Provider rejected the request',checked_at=now() WHERE id=$1 AND status='PENDING'",[p.id]);
-   else await this.db.query("UPDATE payments SET failure='Awaiting provider reconciliation. Do not pay again.' WHERE id=$1 AND status='PENDING'",[p.id]);
+   else{
+    const diagnostic=error instanceof FlutterwaveUnavailable?error:undefined;
+    this.logger.warn(JSON.stringify({event:'PAYMENT_SUBMISSION_UNCERTAIN',paymentId:p.id,provider:p.provider,code:diagnostic?.code||'UNKNOWN',httpStatus:diagnostic?.httpStatus}));
+    await this.db.query('UPDATE payments SET failure=$2 WHERE id=$1 AND status=\'PENDING\'',[p.id,diagnostic?.message||'Awaiting provider reconciliation. Do not pay again.']);
+   }
   }
  }
  safe(p:any){return {id:p.id,orderId:p.order_id,provider:p.provider,amount:p.amount,status:p.status,failure:p.failure,submission:p.submission,providerCurrency:p.provider_currency,sandbox:p.sandbox,authorizationUrl:p.status==='PENDING'?paymentAuthorizationUrl(p.authorization_url):null};}
