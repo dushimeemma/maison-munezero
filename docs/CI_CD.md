@@ -123,8 +123,8 @@ deployments may use `APP_REVISION` instead.
 
 1. Create/link a website project for this repository. Set Root Directory to the
    **repository root**, Framework Preset to **Other**, and use Node 24.
-2. Keep Vercel Git auto-deployment disabled. Root `vercel.json` sets
-   `git.deploymentEnabled=false`; Actions supplies the already compiled output.
+2. Keep Vercel Git auto-deployment disabled. Root `vercel.json` enables native Git deployments for `develop` only;
+   production `main` deployments use Actions and the already compiled output.
    Vercel does not need Flutter installed in a remote build container.
 3. Get the organization/project IDs from your linked project settings or
    `.vercel/project.json`; store them as GitHub variables. Configure its public
@@ -249,3 +249,11 @@ Primary references used for this configuration:
 - https://vercel.com/docs/build-output-api/configuration
 - https://vercel.com/docs/project-configuration/git-configuration
 - https://vercel.com/docs/cli
+
+## Sandbox prereleases
+
+A successful push or manual CI run on `develop` publishes a GitHub prerelease after all five CI jobs pass. Tags use `v1.0.0-sandbox.<workflow-run-number>`. PRs do not publish releases. This requires no deployment token, paid hosting, or `CD_ENABLED` change; the release job uses GitHub's built-in token with `contents: write`.
+
+Assets: `maison-android-review.apk` (review signed, not for the Play Store), `maison-munezero-web.zip`, `review.json`, and `SHA256SUMS`. The APK and web artifact target the sandbox API. Optional repository variables `SANDBOX_API_BASE_URL` and `SANDBOX_WEB_SITE_URL` override the current Maison sandbox URLs. Production builds continue to use `API_BASE_URL`.
+
+Render and Vercel sandbox deployments run independently. These releases certify the CI build, not completion of a hosting deployment. They are marked prerelease and never replace the latest production release. An unsuccessful upload leaves a draft; rerun failed jobs to resume. Existing published assets/tags are not overwritten. If rebuilding changes an existing release's bytes, start a fresh manual CI run on `develop` for a new tag.

@@ -6,14 +6,16 @@ import { requireValues, revision } from './ci-config.mjs';
 export async function publishRelease({ manifest, assets, token, fetchImpl = globalThis.fetch }) {
   requireValues({ GITHUB_TOKEN: token }, ['GITHUB_TOKEN']);
   const { repository, tag, commit, runId } = manifest;
+  const sandbox = manifest.channel === 'sandbox';
+  const manifestName = sandbox ? 'review.json' : 'deployment.json';
   revision(commit);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ||
-      !/^v\d+\.\d+\.\d+\+deploy\.[1-9]\d*$/.test(tag) || !/^[1-9]\d*$/.test(runId)) {
+      !(sandbox ? /^v\d+\.\d+\.\d+-sandbox\.[1-9]\d*$/ : /^v\d+\.\d+\.\d+\+deploy\.[1-9]\d*$/).test(tag) || !/^[1-9]\d*$/.test(runId)) {
     throw new Error('Invalid release identity');
   }
-  const requiredAssets = ['SHA256SUMS', 'deployment.json', 'maison-munezero-web.zip'];
+  const requiredAssets = sandbox ? ['SHA256SUMS', 'maison-android-review.apk', 'maison-munezero-web.zip', 'review.json'] : ['SHA256SUMS', 'deployment.json', 'maison-munezero-web.zip'];
   if (JSON.stringify(assets.map(asset => asset.name).sort()) !== JSON.stringify(requiredAssets) ||
-      !assets.find(asset => asset.name === 'deployment.json').bytes.equals(Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`))) {
+      !assets.find(asset => asset.name === manifestName).bytes.equals(Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`))) {
     throw new Error('Release requires the web bundle, matching deployment manifest and checksums');
   }
   for (const asset of assets) {
@@ -58,7 +60,7 @@ export async function publishRelease({ manifest, assets, token, fetchImpl = glob
   }
   // List includes drafts, allowing a failed asset upload to resume on a later attempt.
   let release = await list('/releases', item => item.tag_name === tag);
-  if (release && (!ref || release.target_commitish !== commit || !release.body?.includes(marker) || release.prerelease)) {
+  if (release && (!ref || release.target_commitish !== commit || !release.body?.includes(marker) || release.prerelease !== sandbox)) {
     throw new Error('Existing release does not belong to this production deployment');
   }
   if (!ref) await request('/git/refs', { method: 'POST', body: { ref: `refs/tags/${tag}`, sha: commit } });
@@ -66,7 +68,12 @@ export async function publishRelease({ manifest, assets, token, fetchImpl = glob
     const notes = await request('/releases/generate-notes', { method: 'POST', body: {
       tag_name: tag, target_commitish: commit, configuration_file_path: '.github/release.yml',
     } });
-    const body = [marker, `Production deployment of **${manifest.version}** at commit \`${commit}\`.`,
+    const body = sandbox ? [marker, `Sandbox review build of **${manifest.version}** at commit \`${commit}\`.`,
+      `CI workflow and checks: ${manifest.runUrl}`, `Test website: ${manifest.web.url}`, `Test API: ${manifest.api.url}`,
+      'Testing only. The APK uses the review signing key and the sandbox API. It is not a Play Store package. '
+        + 'The web ZIP contains this CI build. Hosting deploys independently; this release does not certify the currently hosted revision.',
+      'Assets include the Android review APK, web bundle, review metadata and SHA-256 checksums.', notes.body || '',
+    ].join('\n\n') : [marker, `Production deployment of **${manifest.version}** at commit \`${commit}\`.`,
       `Website: ${manifest.web.url}`, `API: ${manifest.api.url}`,
       `Render deployment: \`${manifest.api.renderDeploymentId}\``,
       `Vercel deployment: ${manifest.web.deploymentUrl}`, `Verified workflow: ${manifest.runUrl}`,
@@ -76,7 +83,7 @@ export async function publishRelease({ manifest, assets, token, fetchImpl = glob
     ].join('\n\n');
     release = await request('/releases', { method: 'POST', body: {
       tag_name: tag, target_commitish: commit, name: `Maison Munezero ${tag}`, body,
-      draft: true, prerelease: false,
+      draft: true, prerelease: sandbox, ...(sandbox ? { make_latest: 'false' } : {}),
     } });
   }
   if (!Number.isSafeInteger(release.id) || release.id <= 0) throw new Error('Invalid GitHub release ID');
@@ -104,7 +111,7 @@ export async function publishRelease({ manifest, assets, token, fetchImpl = glob
   // Publishing last also supports immutable releases: assets are complete before publication.
   // A rerun of an already published release does not change the latest-release pointer.
   if (release.draft) release = await request(`/releases/${release.id}`, {
-    method: 'PATCH', body: { draft: false, make_latest: 'true' },
+    method: 'PATCH', body: { draft: false, make_latest: sandbox ? 'false' : 'true' },
   });
   if (release.draft || release.tag_name !== tag) throw new Error('GitHub release publication did not complete');
   return { tag, url: release.html_url, commit };
