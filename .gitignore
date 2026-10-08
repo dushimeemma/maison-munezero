@@ -16,6 +16,7 @@ local.properties
 .DS_Store
 preview-data/
 .vercel/
+.cache/
 coverage/
 *.log
 *.gitbundle

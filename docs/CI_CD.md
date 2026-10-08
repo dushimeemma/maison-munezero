@@ -84,6 +84,10 @@ configured before building an APK intended for actual review.
 
 ## Render backend setup
 
+For hosted review with Flutterwave test credentials, follow
+[`SANDBOX_DEPLOYMENT.md`](SANDBOX_DEPLOYMENT.md) and use
+`render.sandbox.yaml`. The production settings below require live credentials.
+
 1. Import the root `render.yaml` from this repository on branch `main`, or create
    an equivalent Docker web service. Dockerfile: `apps/api/Dockerfile`; build
    context: `apps/api`. Keep the service root directory at the repository root.
