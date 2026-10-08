@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api.dart';
 import 'ui.dart';
+import 'theme.dart';
 import 'extras.dart';
 
 class AuthPage extends StatefulWidget {
@@ -32,7 +33,10 @@ class _AuthPageState extends State<AuthPage> {
   Widget build(BuildContext context) {
     final api = context.watch<Api>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Maison Munezero')),
+      appBar: AppBar(
+        title: const Text('Maison Munezero'),
+        actions: const [ThemePicker()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -48,9 +52,11 @@ class _AuthPageState extends State<AuthPage> {
                     style: Theme.of(context).textTheme.headlineLarge,
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'Your pieces, your appointments, your atelier.',
-                    style: TextStyle(color: Colors.black54),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 28),
                   if (register) ...[
@@ -105,7 +111,12 @@ class _AuthPageState extends State<AuthPage> {
                   ),
                   const SizedBox(height: 14),
                   if (error != null)
-                    Text(error!, style: const TextStyle(color: Colors.red)),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
@@ -243,9 +254,9 @@ class AccountPage extends StatelessWidget {
               const SizedBox(height: 12),
 
               if (api.user?['email_verified'] != true) ...[
-                const Text(
+                Text(
                   'Verify your email before ordering in the live shop.',
-                  style: TextStyle(color: terracotta),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 Wrap(
                   spacing: 12,
@@ -286,7 +297,12 @@ class AccountPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
               ] else
-                const Text('Email verified', style: TextStyle(color: ink)),
+                Text(
+                  'Email verified',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
 
               OutlinedButton(
                 onPressed: () => resetPassword(context),
@@ -327,9 +343,12 @@ class AccountPage extends StatelessWidget {
             },
             child: const Text('Delete my account'),
           ),
-        const Text(
+        Text(
           'Updates from the maison',
-          style: TextStyle(fontSize: 22, color: ink),
+          style: TextStyle(
+            fontSize: 22,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
         ),
         const SizedBox(height: 18),
         RemoteView(
@@ -416,7 +435,10 @@ class OrderDetail extends StatelessWidget {
   const OrderDetail({required this.id, super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Order details')),
+    appBar: AppBar(
+      title: const Text('Order details'),
+      actions: const [ThemePicker()],
+    ),
     body: SingleChildScrollView(
       child: Center(
         child: ConstrainedBox(
@@ -490,7 +512,10 @@ class OrderDetail extends StatelessWidget {
                         children: [
                           Text(
                             label(o['fulfilment']),
-                            style: const TextStyle(fontSize: 20, color: ink),
+                            style: TextStyle(
+                              fontSize: 20,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -510,11 +535,13 @@ class OrderDetail extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const Text(
+                            Text(
                               'Share this code when you receive your order.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.black54,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -530,16 +557,21 @@ class OrderDetail extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Payment',
-                              style: TextStyle(fontSize: 22, color: ink),
+                              style: TextStyle(
+                                fontSize: 22,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
                             const SizedBox(height: 14),
-                            const Text(
+                            Text(
                               'Pay with MTN MoMo or Airtel Money. Continue to the payment confirmation page, then approve the request on your phone. Enter your PIN only in your wallet provider’s prompt.',
                               style: TextStyle(
                                 height: 1.5,
-                                color: Colors.black54,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                             const SizedBox(height: 14),
@@ -562,12 +594,17 @@ class OrderDetail extends StatelessWidget {
                                   onPressed: () async {
                                     try {
                                       final opened = await launchUrl(
-                                        Uri.parse('${pending['authorization_url']}'),
+                                        Uri.parse(
+                                          '${pending['authorization_url']}',
+                                        ),
                                         mode: LaunchMode.externalApplication,
                                         webOnlyWindowName: '_blank',
                                       );
                                       if (!opened && context.mounted) {
-                                        toast(context, 'Could not open payment confirmation. Allow this site to open a new tab, then try Continue payment again.');
+                                        toast(
+                                          context,
+                                          'Could not open payment confirmation. Allow this site to open a new tab, then try Continue payment again.',
+                                        );
                                       }
                                     } catch (e) {
                                       if (context.mounted) toast(context, e);
@@ -631,9 +668,10 @@ class OrderDetail extends StatelessWidget {
                                           if (context.mounted) {
                                             toast(
                                               context,
-                                              p['failure'] ?? (p['authorizationUrl'] == null
-                                                  ? 'Payment submitted. Use Check payment to see its status.'
-                                                  : p['sandbox'] == true
+                                              p['failure'] ??
+                                                  (p['authorizationUrl'] == null
+                                                      ? 'Payment submitted. Use Check payment to see its status.'
+                                                      : p['sandbox'] == true
                                                       ? 'TEST payment started. Tap Continue payment to complete the test, then Check payment.'
                                                       : 'Tap Continue payment, approve the wallet request, then Check payment.'),
                                             );
@@ -696,9 +734,12 @@ class OrderDetail extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Payment history',
-                              style: TextStyle(fontSize: 20, color: ink),
+                              style: TextStyle(
+                                fontSize: 20,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
                             for (final p in payments)
                               ListTile(
@@ -770,9 +811,12 @@ class OrderDetail extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'Order journey',
-                      style: TextStyle(fontSize: 22, color: ink),
+                      style: TextStyle(
+                        fontSize: 22,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Panel(
@@ -890,10 +934,13 @@ class AtelierPage extends StatelessWidget {
             child: const Text('Start a design request'),
           ),
         ),
-        const Panel(
+        Panel(
           child: Text(
             '1. Share your idea   →   2. Review your quotation   →   3. Pay your deposit\n4. Measurements & production   →   5. Fitting   →   6. Balance & collection',
-            style: TextStyle(height: 2, color: ink),
+            style: TextStyle(
+              height: 2,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
         ),
         if (api.signedIn && (api.role == 'CUSTOMER' || api.studio))
@@ -934,7 +981,10 @@ class BespokeList extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${b['title']}',
-                        style: const TextStyle(fontSize: 21, color: ink),
+                        style: TextStyle(
+                          fontSize: 21,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                       ),
                     ),
                     StatusChip(b['status']),
@@ -958,7 +1008,10 @@ class BespokeList extends StatelessWidget {
                 if ((b['measurements'] as Map).isNotEmpty)
                   Text(
                     'Measurements (cm): ${jsonEncode(b['measurements'])}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 const SizedBox(height: 14),
                 BespokeActions(

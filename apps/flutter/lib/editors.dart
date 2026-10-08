@@ -139,7 +139,9 @@ class _RowEditorState extends State<RowEditor> {
                   padding: const EdgeInsets.only(top: 12),
                   child: Text(
                     error!,
-                    style: const TextStyle(color: Colors.red),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
             ],

@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'api.dart';
-import 'ui.dart';
+import 'theme.dart';
 import 'shop.dart';
 import 'customer.dart';
 import 'workspace.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final appearance = ThemePreference();
+  await appearance.load();
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider<ThemePreference>.value(value: appearance),
         ChangeNotifierProvider(create: (_) => Api()..init()),
         ChangeNotifierProvider(create: (_) => Cart()),
       ],
@@ -25,40 +28,9 @@ class MaisonApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Maison Munezero',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      fontFamily: 'MaisonSans',
-      colorScheme: ColorScheme.fromSeed(seedColor: ink, surface: paper),
-      scaffoldBackgroundColor: paper,
-      textTheme: const TextTheme(
-        headlineLarge: TextStyle(
-          fontFamily: 'MaisonSerif',
-          fontWeight: FontWeight.w400,
-          color: ink,
-        ),
-        headlineMedium: TextStyle(
-          fontFamily: 'MaisonSerif',
-          fontWeight: FontWeight.w400,
-          color: ink,
-        ),
-        titleLarge: TextStyle(color: ink, fontWeight: FontWeight.w500),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: ink,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        ),
-      ),
-    ),
+    theme: maisonTheme(Brightness.light),
+    darkTheme: maisonTheme(Brightness.dark),
+    themeMode: context.watch<ThemePreference>().mode,
     onGenerateRoute: (settings) {
       final path = Uri.parse(settings.name ?? '/').path;
       Widget screen;
@@ -134,8 +106,6 @@ class _ShellState extends State<Shell> {
     return Scaffold(
       key: scaffold,
       appBar: AppBar(
-        backgroundColor: paper,
-        surfaceTintColor: paper,
         toolbarHeight: 86,
         automaticallyImplyLeading: !wide,
         leading: wide
@@ -151,12 +121,12 @@ class _ShellState extends State<Shell> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'MAISON MUNEZERO',
+                wide ? 'MAISON MUNEZERO' : 'Maison Munezero',
                 style: TextStyle(
                   fontSize: wide ? 18 : 13,
-                  letterSpacing: wide ? 3 : 1.2,
+                  letterSpacing: wide ? 3 : 0.3,
                   fontWeight: FontWeight.w600,
-                  color: ink,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               SizedBox(height: 4),
@@ -165,13 +135,14 @@ class _ShellState extends State<Shell> {
                 style: TextStyle(
                   fontSize: wide ? 9 : 7,
                   letterSpacing: wide ? 2.7 : 1.2,
-                  color: Colors.black54,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
         actions: [
+          const ThemePicker(),
           if (wide)
             for (final p in pages)
               TextButton(
@@ -179,7 +150,9 @@ class _ShellState extends State<Shell> {
                 child: Text(
                   p,
                   style: TextStyle(
-                    color: page == p ? ink : Colors.black54,
+                    color: page == p
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: page == p ? FontWeight.w700 : FontWeight.normal,
                   ),
                 ),
@@ -205,11 +178,14 @@ class _ShellState extends State<Shell> {
         child: SafeArea(
           child: ListView(
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
                   'Maison Munezero',
-                  style: TextStyle(fontSize: 24, color: ink),
+                  style: TextStyle(
+                    fontSize: 24,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
               ),
               for (final p in pages)
