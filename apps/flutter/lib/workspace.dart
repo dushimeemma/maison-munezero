@@ -419,13 +419,16 @@ class InventoryWorkspace extends StatelessWidget {
                       ),
                     ),
                   ),
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
                     child: Text(
                       'Stock history',
-                      style: TextStyle(fontSize: 22, color: ink),
+                      style: TextStyle(
+                        fontSize: 22,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                     ),
                   ),
                 ),
@@ -473,7 +476,10 @@ class DeliveriesWorkspace extends StatelessWidget {
                           Expanded(
                             child: Text(
                               'MM-${d['number']} · ${d['customer_name']}',
-                              style: const TextStyle(fontSize: 18, color: ink),
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
                           ),
                           StatusChip(d['status']),
@@ -970,12 +976,19 @@ class ReportsWorkspace extends StatelessWidget {
                         children: [
                           Text(
                             entry.key,
-                            style: const TextStyle(color: Colors.black54),
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           const SizedBox(height: 14),
                           Text(
                             rwf(entry.value),
-                            style: const TextStyle(fontSize: 25, color: ink),
+                            style: TextStyle(
+                              fontSize: 25,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                           ),
                         ],
                       ),
@@ -983,9 +996,12 @@ class ReportsWorkspace extends StatelessWidget {
                   ),
               ],
             ),
-            const Text(
+            Text(
               'Orders by status',
-              style: TextStyle(fontSize: 22, color: ink),
+              style: TextStyle(
+                fontSize: 22,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
             for (final o in data['orders'])
               ListTile(
@@ -993,7 +1009,13 @@ class ReportsWorkspace extends StatelessWidget {
                 trailing: Text('${o['count']}'),
               ),
             const SizedBox(height: 16),
-            const Text('Low stock', style: TextStyle(fontSize: 22, color: ink)),
+            Text(
+              'Low stock',
+              style: TextStyle(
+                fontSize: 22,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
             for (final v in data['lowStock'])
               ListTile(
                 title: Text('${v['name']} · ${v['size']} · ${v['color']}'),
@@ -1001,9 +1023,12 @@ class ReportsWorkspace extends StatelessWidget {
                 trailing: Text('${v['stock']}'),
               ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Daily receipts · last 30 days',
-              style: TextStyle(fontSize: 22, color: ink),
+              style: TextStyle(
+                fontSize: 22,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
             for (final day in data['daily'])
               ListTile(

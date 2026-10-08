@@ -49,7 +49,10 @@ class PageHeading extends StatelessWidget {
                   : 650,
               child: Text(
                 subtitle,
-                style: const TextStyle(color: Colors.black54, height: 1.5),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.5,
+                ),
               ),
             ),
           ],
@@ -67,12 +70,18 @@ class StatusChip extends StatelessWidget {
   Widget build(BuildContext context) => Chip(
     label: Text(
       label(status),
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: ['FAILED', 'CANCELLED', 'REJECTED'].contains(status)
+            ? Theme.of(context).colorScheme.onErrorContainer
+            : Theme.of(context).colorScheme.onSecondaryContainer,
+      ),
     ),
     side: BorderSide.none,
     backgroundColor: ['FAILED', 'CANCELLED', 'REJECTED'].contains(status)
-        ? const Color(0xFFF5DFD7)
-        : const Color(0xFFE6ECE4),
+        ? Theme.of(context).colorScheme.errorContainer
+        : Theme.of(context).colorScheme.secondaryContainer,
   );
 }
 
@@ -84,8 +93,8 @@ class Panel extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 16),
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: const Color(0xFFE4E5DC)),
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       borderRadius: BorderRadius.circular(12),
     ),
     child: child,
@@ -310,7 +319,10 @@ class _EditDialogState extends State<_EditDialog> {
                         ),
                 ),
               if (error != null)
-                Text(error!, style: const TextStyle(color: Colors.red)),
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
             ],
           ),
         ),
@@ -358,10 +370,10 @@ class EmptyState extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           children: [
-            const Icon(
+            Icon(
               Icons.checkroom_outlined,
               size: 40,
-              color: Colors.black38,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 16),
             Text(text, textAlign: TextAlign.center),

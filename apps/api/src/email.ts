@@ -1,3 +1,4 @@
+import { renderEmail } from './email-template';
 import nodemailer from 'nodemailer';
 
 type Env = NodeJS.ProcessEnv;
@@ -26,7 +27,7 @@ export function createEmailDelivery(env:Env=process.env, fetchImpl:typeof fetch=
    try{response=await fetchImpl('https://api.brevo.com/v3/smtp/email',{
     method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),
     headers:{'api-key':env.BREVO_API_KEY!,Accept:'application/json','Content-Type':'application/json'},
-    body:JSON.stringify({sender:{email:env.EMAIL_FROM,name:env.EMAIL_FROM_NAME||'Maison Munezero'},to:[{email:message.to}],subject:message.subject,textContent:message.text}),
+    body:JSON.stringify({sender:{email:env.EMAIL_FROM,name:env.EMAIL_FROM_NAME||'Maison Munezero'},to:[{email:message.to}],subject:message.subject,textContent:message.text,htmlContent:renderEmail(message)}),
    });}catch{throw new EmailDeliveryError('EMAIL_NETWORK_OR_TIMEOUT');}
    if(!response.ok)throw new EmailDeliveryError('EMAIL_PROVIDER_REJECTED',response.status);
    let result:any;
@@ -36,5 +37,5 @@ export function createEmailDelivery(env:Env=process.env, fetchImpl:typeof fetch=
   close(){},
  };
  const transport=nodemailer.createTransport({host:env.SMTP_HOST,port:Number(env.SMTP_PORT||587),secure:env.SMTP_SECURE==='true',connectionTimeout:15000,greetingTimeout:15000,socketTimeout:15000,auth:env.SMTP_USER?{user:env.SMTP_USER,pass:env.SMTP_PASS}:undefined});
- return {provider,async send(message:Message){try{await transport.sendMail({from:env.SMTP_FROM,to:message.to,subject:message.subject,text:message.text});}catch{throw new EmailDeliveryError('EMAIL_SMTP_FAILED');}},close(){transport.close();}};
+ return {provider,async send(message:Message){try{await transport.sendMail({from:env.SMTP_FROM,to:message.to,subject:message.subject,text:message.text,html:renderEmail(message)});}catch{throw new EmailDeliveryError('EMAIL_SMTP_FAILED');}},close(){transport.close();}};
 }

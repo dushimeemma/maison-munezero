@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'api.dart';
 import 'ui.dart';
+import 'theme.dart';
 import 'customer.dart';
 
 class CollectionPage extends StatefulWidget {
@@ -55,12 +56,12 @@ class _CollectionPageState extends State<CollectionPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       'THE MAISON EDIT',
                       style: TextStyle(
                         letterSpacing: 3,
                         fontSize: 11,
-                        color: ink,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 22),
@@ -70,16 +71,16 @@ class _CollectionPageState extends State<CollectionPage> {
                         fontFamily: 'MaisonSerif',
                         fontSize: wide ? 62 : 44,
                         height: 1.08,
-                        color: ink,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Text(
+                    Text(
                       'Expressive pieces. Considered details.\nDiscover ready-to-wear or create something\nuniquely yours with our atelier.',
                       style: TextStyle(
                         fontSize: 15,
                         height: 1.8,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 26),
@@ -92,12 +93,12 @@ class _CollectionPageState extends State<CollectionPage> {
                       label: const Text('Explore the collection'),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'READY-TO-WEAR  /  BESPOKE  /  OCCASION',
                       style: TextStyle(
                         fontSize: 9,
                         letterSpacing: 1.5,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -110,7 +111,7 @@ class _CollectionPageState extends State<CollectionPage> {
                   Container(
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEEEDE3),
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: wide
@@ -143,28 +144,40 @@ class _CollectionPageState extends State<CollectionPage> {
                   Wrap(
                     spacing: 28,
                     runSpacing: 10,
-                    children: const [
+                    children: [
                       Text(
                         '✦  Crafted with care',
-                        style: TextStyle(color: ink, fontSize: 12),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 12,
+                        ),
                       ),
                       Text(
                         '✦  Shop pickup & delivery',
-                        style: TextStyle(color: ink, fontSize: 12),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 12,
+                        ),
                       ),
                       Text(
                         '✦  Custom design consultations',
-                        style: TextStyle(color: ink, fontSize: 12),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 48),
                   if (s['sampleCatalogue'] == true)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(bottom: 20),
                       child: Text(
                         'Preview collection · Sample products and illustrations',
-                        style: TextStyle(color: terracotta, fontSize: 12),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   PageHeading(
@@ -293,9 +306,12 @@ class _CollectionPageState extends State<CollectionPage> {
                     spacing: 36,
                     runSpacing: 16,
                     children: [
-                      const Text(
+                      Text(
                         'MAISON MUNEZERO',
-                        style: TextStyle(letterSpacing: 2, color: ink),
+                        style: TextStyle(
+                          letterSpacing: 2,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                       ),
                       SelectableText('${s['shopAddress']}'),
                       SelectableText('${s['shopPhone']}'),
@@ -304,11 +320,14 @@ class _CollectionPageState extends State<CollectionPage> {
                   ),
                   const SizedBox(height: 28),
                   const Divider(),
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
                     child: Text(
                       '© Maison Munezero · Fashion with a personal point of view.',
-                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -364,10 +383,10 @@ class ProductCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             '${product['category']}'.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9,
               letterSpacing: 1.8,
-              color: Colors.black54,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 6),
@@ -375,12 +394,18 @@ class ProductCard extends StatelessWidget {
             '${product['name']}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 15, color: ink),
+            style: TextStyle(
+              fontSize: 15,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             rwf(product['price']),
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -402,6 +427,7 @@ class _ProductDetailState extends State<ProductDetail> {
     appBar: AppBar(
       title: const Text('The collection'),
       actions: [
+        const ThemePicker(),
         IconButton(
           icon: const Icon(Icons.shopping_bag_outlined),
           onPressed: () => Navigator.pushNamed(context, '/checkout'),
@@ -445,9 +471,9 @@ class _ProductDetailState extends State<ProductDetail> {
                 children: [
                   Text(
                     '${product['category']}'.toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       letterSpacing: 2,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 11,
                     ),
                   ),
@@ -459,12 +485,18 @@ class _ProductDetailState extends State<ProductDetail> {
                   const SizedBox(height: 20),
                   Text(
                     rwf(product['price']),
-                    style: const TextStyle(fontSize: 20, color: ink),
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Text(
                     product['description'],
-                    style: const TextStyle(height: 1.7, color: Colors.black54),
+                    style: TextStyle(
+                      height: 1.7,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 28),
                   DropdownButtonFormField<String>(
@@ -525,12 +557,12 @@ class _ProductDetailState extends State<ProductDetail> {
                   ),
                   const SizedBox(height: 26),
                   const Divider(),
-                  const Text(
+                  Text(
                     'Collect at the shop or choose delivery at checkout. Your total, including delivery, is confirmed before payment.',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.6,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -586,7 +618,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final api = context.watch<Api>();
     final cart = context.watch<Cart>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Your shopping bag')),
+      appBar: AppBar(
+        title: const Text('Your shopping bag'),
+        actions: const [ThemePicker()],
+      ),
       body: cart.lines.isEmpty
           ? const Padding(
               padding: EdgeInsets.all(24),
@@ -649,8 +684,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                           ),
                                           Text(
                                             '${entry.value['variant']['size']} · ${entry.value['variant']['color']}',
-                                            style: const TextStyle(
-                                              color: Colors.black54,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                             ),
                                           ),
                                           Text(
@@ -803,10 +840,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     rwf(cart.subtotal + fee + tax),
                                   ),
                                   const SizedBox(height: 10),
-                                  const Text(
+                                  Text(
                                     'The server checks current prices and stock when you place your order. Review the confirmed total before paying.',
                                     style: TextStyle(
-                                      color: Colors.black54,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                       fontSize: 12,
                                       height: 1.5,
                                     ),

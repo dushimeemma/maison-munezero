@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:maison_munezero/api.dart';
 import 'package:maison_munezero/main.dart';
 import 'package:maison_munezero/customer.dart';
+import 'package:maison_munezero/theme.dart';
 
 class FixtureApi extends Api {
   FixtureApi([String? fixtureRole]) {
@@ -104,6 +105,7 @@ Widget app(Api api, [Widget? child]) => RepaintBoundary(
   key: captureKey,
   child: MultiProvider(
     providers: [
+      ChangeNotifierProvider(create: (_) => ThemePreference(read: () async => null, write: (_) async {})),
       ChangeNotifierProvider<Api>.value(value: api),
       ChangeNotifierProvider(create: (_) => Cart()),
     ],

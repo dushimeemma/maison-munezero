@@ -63,3 +63,13 @@ References:
 - https://render.com/docs/free
 - https://developers.brevo.com/docs/send-a-transactional-email
 - https://help.brevo.com/hc/en-us/articles/208836149-Create-a-new-sender-From-name-and-From-email
+
+## Email appearance
+
+Every queued notification is delivered as branded HTML plus its original
+plain-text fallback, using both Brevo HTTPS and local SMTP. The layout uses
+Maison Munezero's forest green, warm ivory, serif heading and atelier signature.
+Account verification and password reset emails highlight the full one-time code
+and retain the existing expiry and instructions. Codes are excluded from hidden
+preview text. User-supplied subjects and messages are HTML-escaped.
+No database migration or Brevo template configuration is needed.
