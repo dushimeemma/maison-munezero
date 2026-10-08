@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { Db, Sql } from './db';
 import { Flutterwave, FlutterwaveUnavailable, MobileMoneyGateway } from './payment-providers';
+import { paymentMismatchFields } from './payment-verification';
 
 // Inspect existing requests only: no POST, reconciliation, resubmission or writes.
 export async function inspectPendingFlutterwave(sql:Sql,gateway:Pick<MobileMoneyGateway,'status'>){
@@ -10,10 +11,9 @@ export async function inspectPendingFlutterwave(sql:Sql,gateway:Pick<MobileMoney
   try{
    const result=await gateway.status(p);
    if(!result)return {...summary,verification:'NOT_FOUND_OR_NOT_YET_AVAILABLE'};
-   const normalPhone=(v:string)=>v.replace(/^\+/,'').replace(/^0/,'250');
-   const matches=result.reference===p.reference&&result.amount===p.amount&&result.currency===p.provider_currency&&result.email?.toLowerCase()===p.payer_email?.toLowerCase()&&(result.phone==null||normalPhone(result.phone)===p.phone);
+   const mismatchFields=paymentMismatchFields({...p,provider:'FLUTTERWAVE'},result);
    const status=['SUCCESSFUL','FAILED','PENDING'].includes(result.status)?result.status:'UNKNOWN';
-   return {...summary,verification:status,matchesStoredPayment:matches,hasProviderTransactionId:!!result.transactionId};
+   return {...summary,verification:status,matchesStoredPayment:mismatchFields.length===0,mismatchFields,hasProviderTransactionId:!!result.transactionId};
   }catch(error){
    const diagnostic=error instanceof FlutterwaveUnavailable?error:undefined;
    return {...summary,verification:'UNAVAILABLE',code:diagnostic?.code||'UNKNOWN',httpStatus:diagnostic?.httpStatus};
