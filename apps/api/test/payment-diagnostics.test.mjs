@@ -30,11 +30,18 @@ test('diagnostics retain unavailable requests and fixed HTTP diagnostics without
 test('diagnostics report provider outcome and settlement mismatches without applying a payment',async()=>{
  const rows=[payment(),payment()],gateway={async status(p){return {status:'SUCCESSFUL',reference:p.reference,amount:p.amount,currency:p.id===rows[0].id?'RWF':'EUR',email:p.payer_email,phone:p.phone,transactionId:'provider-private-id'};}};
  const reports=await inspectPendingFlutterwave({async query(){return {rows};}},gateway);
- assert.equal(reports[0].verification,'SUCCESSFUL');assert.equal(reports[0].matchesStoredPayment,true);assert.equal(reports[0].hasProviderTransactionId,true);assert.equal(reports[1].matchesStoredPayment,false);
+ assert.equal(reports[0].verification,'SUCCESSFUL');assert.equal(reports[0].matchesStoredPayment,true);assert.equal(reports[0].hasProviderTransactionId,true);assert.equal(reports[1].matchesStoredPayment,false);assert.deepEqual(reports[1].mismatchFields,['currency']);
  assert.ok(rows.every(p=>p.status==='PENDING'));assert.ok(!JSON.stringify(reports).includes('provider-private-id'));
 });
 test('CLI refuses invalid configuration before accessing a database and never prints environment secrets',()=>{
  const secret='private-key-value',result=spawnSync(process.execPath,['dist/check-payments.js'],{encoding:'utf8',timeout:10000,env:{...process.env,FLUTTERWAVE_MODE:secret,FLUTTERWAVE_SECRET_KEY:secret,DATABASE_URL:'postgresql://private-user:private-password@invalid.test/private-db'}});
  assert.equal(result.status,1);const output=result.stdout+result.stderr;assert.match(output,/"readOnly":true/);assert.match(output,/"mode":"INVALID"/);assert.match(output,/"matchingV3KeyConfigured":false/);
  for(const privateValue of [secret,'private-password','private-user','invalid.test'])assert.ok(!output.includes(privateValue));
+});
+
+test('diagnostics use financial identity even when Flutterwave contacts are missing or differ',async()=>{
+ const p=payment(),result={status:'SUCCESSFUL',reference:p.reference,amount:p.amount,currency:'RWF',phone:'N/A',email:'different-private@example.test',transactionId:'private-provider-id'};
+ const reports=await inspectPendingFlutterwave({async query(){return {rows:[p]};}},{async status(){return result;}});
+ assert.equal(reports[0].matchesStoredPayment,true);assert.deepEqual(reports[0].mismatchFields,[]);
+ for(const value of [p.payer_email,p.phone,result.email,result.phone,result.transactionId])assert.ok(!JSON.stringify(reports).includes(value));
 });

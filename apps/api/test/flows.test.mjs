@@ -178,13 +178,23 @@ async function paymentOrder(){
  const r=await call(customer,'post','/orders',{...checkoutData(),items:[{variantId:v.id,quantity:1}]},randomUUID());assert.equal(r.status,201);return r.body;
 }
 function verified(p,overrides={}){return {status:'SUCCESSFUL',reference:p.reference,amount:p.amount,currency:'RWF',phone:p.phone,email:p.payer_email,transactionId:randomUUID(),...overrides};}
-test('reference, currency, payer and missing transaction ID mismatches cannot settle',async()=>{
+test('financial mismatches stay pending and identify only the failed fields',async()=>{
  const o=await paymentOrder();const p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,{phone:'250780000001'},randomUUID())).body;
  const raw=(await sql.query('SELECT * FROM payments WHERE id=$1',[p.id])).rows[0];
- for(const mismatch of [{reference:randomUUID()},{currency:'EUR'},{email:'other@test.rw'},{phone:'250730000002'},{transactionId:undefined}]){
-  provider.results.set(raw.reference,verified(raw,mismatch));assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).status,409);assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.paid,0);
+ for(const mismatch of [{reference:randomUUID()},{currency:'EUR'},{amount:1},{amount:NaN},{transactionId:undefined},{transactionId:'   '}]){
+  provider.results.set(raw.reference,verified(raw,mismatch));const response=await call(customer,'post',`/payments/${p.id}/check`,{});assert.equal(response.status,409);assert.ok(response.body.message.includes(Object.keys(mismatch)[0]));assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.paid,0);
  }
  provider.results.set(raw.reference,verified(raw,{phone:'0780000001'}));assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).body.status,'SUCCESSFUL');
+});
+test('Flutterwave profile contacts are not settlement identifiers; verified payment applies exactly once',async()=>{
+ for(const contacts of [{phone:'N/A',email:undefined},{phone:'250730000002',email:'other@test.rw'},{phone:undefined,email:undefined}]){
+  const o=await paymentOrder(),p=(await call(customer,'post',`/payments/orders/${o.id}/mobile-money`,{phone:'250780000001'},randomUUID())).body;
+  const raw=(await sql.query('SELECT * FROM payments WHERE id=$1',[p.id])).rows[0],before=provider.calls;
+  provider.results.set(raw.reference,verified(raw,contacts));
+  for(let i=0;i<2;i++)assert.equal((await call(customer,'post',`/payments/${p.id}/check`,{})).body.status,'SUCCESSFUL');
+  const detail=(await call(customer,'get',`/orders/${o.id}`)).body;assert.equal(detail.paid,o.total);assert.equal(detail.status,'CONFIRMED');assert.equal(provider.calls,before);
+  assert.equal((await sql.query("SELECT count(*)::int n FROM audit WHERE entity_id=$1 AND action='FLUTTERWAVE_SUCCESSFUL'",[p.id])).rows[0].n,1);
+ }
 });
 test('lost submission response cannot trigger resubmission, cash collection or another provider charge',async()=>{
  const o=await paymentOrder(),key=randomUUID(),body={phone:'250730000001'},original=provider.submit;

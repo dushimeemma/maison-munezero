@@ -47,3 +47,11 @@ The package has Android SDK 36 / Java 17 configuration and iOS 13+ source config
 ## Business launch boundaries
 
 Real shop information, products, images, prices, policies, tax instructions, merchant credentials, HTTPS hosting, mobile signing and physical-device acceptance are pending. Operational lists have explicit limits documented in `BUSINESS_RULES.md`. Automatic refund transfers, fiscal EBM integration and other excluded capabilities are documented there and are not claimed as implemented.
+
+### Flutterwave settlement verification
+
+The API verifies the provider outcome using the merchant secret key and the payment's unique `tx_ref`. A successful result must have the exact reference, exact expected amount, expected currency, and a nonempty provider transaction ID. Flutterwave customer-profile phone/email are descriptive fields, not settlement identifiers; missing or different profile contacts do not reject an otherwise verified payment. Legacy MTN payments retain their existing phone check.
+
+True mismatches stay pending and report only the field names (reference, amount, currency, transactionId), never raw provider values or personal data. The read-only `node dist/check-payments.js` diagnostic uses the same checks and includes `mismatchFields`. After deployment, existing pending payments are rechecked by the 30-second worker or the customer's **Check payment** button. Neither path sends another charge.
+
+Reference: https://developer.flutterwave.com/docs/transaction-verification

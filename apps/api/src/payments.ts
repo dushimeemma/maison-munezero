@@ -4,6 +4,7 @@ import { Db, Sql, one, audit, notify } from './db';
 import { Actor, Allow, Public, sales, finance, parse, uuid, money, phone, text } from './security';
 import { OrderService } from './orders';
 import { Flutterwave, FlutterwaveUnavailable, PaymentProviders, paymentAuthorizationUrl } from './payment-providers';
+import { paymentMismatchFields } from './payment-verification';
 export { Flutterwave, Momo } from './payment-providers';
 @Injectable()
 export class PaymentService {
@@ -64,10 +65,11 @@ export class PaymentService {
   }
   if(!['SUCCESSFUL','FAILED'].includes(result.status))return this.safe(p);
   // A callback is only a wake-up signal. Financial truth is fetched using our merchant credentials.
-  const phoneMatches=(v:string)=>v.replace(/^\+/, '').replace(/^0/,'250')===p.phone;
-  if(result.reference!==(p.provider==='MOMO'?p.id:p.reference)||result.amount!==p.amount||result.currency!==p.provider_currency||
-   p.provider==='MOMO'&&result.phone!==p.phone||p.provider==='FLUTTERWAVE'&&(result.email?.toLowerCase()!==p.payer_email?.toLowerCase()||result.phone!=null&&!phoneMatches(result.phone))||
-   result.status==='SUCCESSFUL'&&!result.transactionId)throw new ConflictException('Provider payment does not match this request');
+  const mismatches=paymentMismatchFields(p,result);
+  if(mismatches.length){
+   this.logger.warn(JSON.stringify({event:'PAYMENT_VERIFICATION_MISMATCH',paymentId:p.id,provider:p.provider,fields:mismatches}));
+   throw new ConflictException(`Provider payment does not match this request (${mismatches.join(', ')}). Payment remains pending; contact the shop and do not pay again.`);
+  }
   return this.db.tx(async sql=>{
    // Consistent lock order throughout payment creation, cash and reconciliation.
    const o=await one(sql,'SELECT * FROM orders WHERE id=$1 FOR UPDATE',[p.order_id]);
