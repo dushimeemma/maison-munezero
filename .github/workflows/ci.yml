@@ -65,7 +65,7 @@ jobs:
     name: Frontend checks and web build
     runs-on: ubuntu-latest
     env:
-      API_BASE_URL: ${{ vars.API_BASE_URL || '/api/v1' }}
+      API_BASE_URL: ${{ github.ref != 'refs/heads/main' && (vars.SANDBOX_API_BASE_URL || 'https://maison-munezero-api-sandbox.onrender.com/api/v1') || vars.API_BASE_URL || '/api/v1' }}
       CD_ENABLED: ${{ vars.CD_ENABLED }}
     steps:
       - uses: actions/checkout@v4
@@ -119,7 +119,7 @@ jobs:
       - run: flutter pub get
       - run: flutter build apk --release --no-tree-shake-icons --dart-define=API_BASE_URL="$API_BASE_URL"
         env:
-          API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
+          API_BASE_URL: ${{ github.ref != 'refs/heads/main' && (vars.SANDBOX_API_BASE_URL || 'https://maison-munezero-api-sandbox.onrender.com/api/v1') || vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
           ORG_GRADLE_PROJECT_reviewBuild: 'true'
       - uses: actions/upload-artifact@v4
         with:
@@ -143,7 +143,7 @@ jobs:
       - run: flutter pub get
       - run: flutter build ios --release --no-tree-shake-icons --no-codesign --dart-define=API_BASE_URL="$API_BASE_URL"
         env:
-          API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
+          API_BASE_URL: ${{ github.ref != 'refs/heads/main' && (vars.SANDBOX_API_BASE_URL || 'https://maison-munezero-api-sandbox.onrender.com/api/v1') || vars.API_BASE_URL || 'https://api.example.invalid/api/v1' }}
 
   deployment-config:
     name: Check production configuration
@@ -253,3 +253,37 @@ jobs:
           path: .vercel/output
       - name: Tag the deployed commit and publish verified assets
         run: npm run release:publish
+
+  sandbox-release:
+    name: Publish sandbox prerelease
+    needs: [automation, api, flutter-web, android-review, ios-build]
+    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      API_BASE_URL: ${{ vars.SANDBOX_API_BASE_URL || 'https://maison-munezero-api-sandbox.onrender.com/api/v1' }}
+      WEB_SITE_URL: ${{ vars.SANDBOX_WEB_SITE_URL || 'https://maison-munezero-sandbox.vercel.app' }}
+      AUTOMATION_RESULT: ${{ needs.automation.result }}
+      API_RESULT: ${{ needs.api.result }}
+      WEB_RESULT: ${{ needs.flutter-web.result }}
+      ANDROID_RESULT: ${{ needs.android-review.result }}
+      IOS_RESULT: ${{ needs.ios-build.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: maison-vercel-web
+          path: .vercel/output
+      - uses: actions/download-artifact@v4
+        with:
+          name: maison-android-review-only
+          path: .vercel/android-review
+      - run: node scripts/publish-sandbox-release.mjs
