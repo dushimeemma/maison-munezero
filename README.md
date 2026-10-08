@@ -18,7 +18,7 @@ The Instagram reference could not be retrieved reliably. Products, prices, garme
 - Driver assignment/reassignment, dispatch, failure reporting and recipient-code confirmation.
 - Inventory adjustments with reasons, product image uploads through Cloudinary, product publication and price management.
 - Return requests, finance review and externally verified refund records.
-- In-app notifications, SMTP outbox/retry worker, financial summaries, low stock and audit history.
+- In-app notifications, HTTPS/SMTP email outbox/retry worker, financial summaries, low stock and audit history.
 - Docker setup, PostgreSQL migrations, environment examples and GitHub CI/CD: verification, Render API deployment, Vercel web publication and production GitHub Releases, plus Android review and unsigned iOS builds.
 
 ## Monorepo and CI/CD
@@ -75,7 +75,7 @@ flutter run -d chrome --web-port=8080 --dart-define=API_BASE_URL=http://localhos
 
 Open the app, sign in using the admin account you configured, open Workspace → Users and create staff accounts. Customers register through Sign in → Create account.
 
-Mobile-money payment is disabled until Flutterwave v3 credentials are configured. Start with `FLUTTERWAVE_MODE=test` and your v3 test secret key; see `docs/LAUNCH.md` for the confirmation-page and webhook setup. The shop cash flow can be reviewed without payment-provider credentials. Password recovery emails and image uploads need SMTP and Cloudinary settings respectively; in-app notifications work without SMTP.
+Mobile-money payment is disabled until Flutterwave v3 credentials are configured. Start with `FLUTTERWAVE_MODE=test` and your v3 test secret key; see `docs/LAUNCH.md` for the confirmation-page and webhook setup. The shop cash flow can be reviewed without payment-provider credentials. Email verification, password recovery and order notifications use the email outbox. Configure Brevo HTTPS on Render Free or SMTP locally; see `docs/EMAIL.md`. Image uploads need Cloudinary settings; in-app notifications work without email configuration.
 
 ## Release web build and container
 

@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import nodemailer from 'nodemailer';
+import { createEmailDelivery, EmailDeliveryError } from './email';
 import { Db } from './db';
 import { PaymentService } from './payments';
 @Injectable()
@@ -25,10 +25,15 @@ export class Workers implements OnModuleInit,OnModuleDestroy {
    const pending=(await sql.query("SELECT reference FROM payments WHERE provider IN ('MOMO','FLUTTERWAVE') AND status='PENDING' AND (checked_at IS NULL OR checked_at<now()-interval '25 seconds') ORDER BY checked_at NULLS FIRST,created_at LIMIT 10")).rows;
    for(const p of pending)try{await this.payments.reconcile(p.reference);}catch{console.warn('Payment reconciliation deferred');}
   });
-  if(process.env.SMTP_HOST){const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_SECURE==='true',auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}:undefined});
+  const delivery=createEmailDelivery();
+  if(delivery){try{
    await this.db.tx(async sql=>{const emails=(await sql.query(`SELECT o.*,u.email FROM outbox o JOIN users u ON u.id=o.user_id WHERE o.sent_at IS NULL AND o.next_at<=now() AND o.attempts<10 ORDER BY o.created_at LIMIT 10 FOR UPDATE OF o SKIP LOCKED`)).rows;
-    for(const e of emails)try{await transport.sendMail({from:process.env.SMTP_FROM,to:e.email,subject:e.subject,text:e.body});await sql.query('UPDATE outbox SET sent_at=now(),attempts=attempts+1 WHERE id=$1',[e.id]);}catch{await sql.query("UPDATE outbox SET attempts=attempts+1,next_at=now()+interval '10 minutes' WHERE id=$1",[e.id]);}
-   });transport.close();
-  }
+    for(const e of emails)try{await delivery.send({id:e.id,to:e.email,subject:e.subject,text:e.body});await sql.query('UPDATE outbox SET sent_at=now(),attempts=attempts+1 WHERE id=$1',[e.id]);}catch(error){
+     const failure=error instanceof EmailDeliveryError?error:new EmailDeliveryError('EMAIL_DELIVERY_FAILED');
+     console.warn(JSON.stringify({event:'EMAIL_DELIVERY_FAILED',provider:delivery.provider,code:failure.code,httpStatus:failure.httpStatus}));
+     await sql.query("UPDATE outbox SET attempts=attempts+1,next_at=now()+interval '10 minutes' WHERE id=$1",[e.id]);
+    }
+   });
+  }finally{delivery.close();}}
  }catch{console.warn('Background task deferred');}finally{this.running=false;}}
 }

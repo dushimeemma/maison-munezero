@@ -3,11 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app';
 import { Flutterwave } from './payment-providers';
+import { assertEmailConfigured } from './email';
 async function main(){
  if(!process.env.DATABASE_URL)throw new Error('DATABASE_URL is required');
  if(process.env.NODE_ENV==='production'){
   if(!process.env.CORS_ORIGINS?.startsWith('https://'))throw new Error('Production HTTPS CORS origins are required');
-  if(!process.env.SMTP_HOST||!process.env.SMTP_FROM)throw new Error('Production SMTP configuration is required for account recovery');
+  assertEmailConfigured();
   if(process.env.FLUTTERWAVE_MODE!=='live')throw new Error('Production requires Flutterwave live payment mode');
   new Flutterwave().assertConfigured();
   if(!process.env.FLUTTERWAVE_WEBHOOK_SECRET||process.env.FLUTTERWAVE_WEBHOOK_SECRET.length<32)throw new Error('Production requires a Flutterwave webhook secret of at least 32 characters');
