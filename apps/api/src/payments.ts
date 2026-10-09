@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Param, Req, Injectable, ConflictException, BadRequestException, HttpCode, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import { Db, Sql, one, audit, notify } from './db';
+import { Db, Sql, one, audit, notify, notifyOrderTeam } from './db';
 import { Actor, Allow, Public, sales, finance, parse, uuid, money, phone, text } from './security';
 import { OrderService } from './orders';
 import { Flutterwave, FlutterwaveUnavailable, PaymentProviders, paymentAuthorizationUrl } from './payment-providers';
@@ -86,7 +86,8 @@ export class PaymentService {
   const paid=o.paid+amount;const status=o.status==='AWAITING_PAYMENT'&&paid>=o.deposit_due?'CONFIRMED':o.status;
   await sql.query('UPDATE orders SET paid=$2,status=$3,updated_at=now() WHERE id=$1',[o.id,paid,status]);
   await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[o.id,status,`Payment received: ${amount} RWF`,actor]);
-  await notify(sql,o.customer_id,`Payment received for MM-${o.number}`,`${amount} RWF received. Remaining balance: ${o.total-paid} RWF.`);
+  await notify(sql,o.customer_id,`Payment received for MM-${o.number}`,`${amount} RWF received. Remaining balance: ${o.total-paid} RWF.`,{orderId:o.id});
+  if(status==='CONFIRMED'&&o.status==='AWAITING_PAYMENT')await notifyOrderTeam(sql,o.id,actor,`Order MM-${o.number} confirmed`,'The required payment has been received. Prepare this order.');
  }
  async cash(id:string,a:Actor,body:any,key:string){
   const d=parse(z.object({amount:money,receiptReference:text(100)}).strict(),body);

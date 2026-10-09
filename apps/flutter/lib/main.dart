@@ -5,6 +5,7 @@ import 'theme.dart';
 import 'shop.dart';
 import 'customer.dart';
 import 'workspace.dart';
+import 'notifications.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -143,6 +144,7 @@ class _ShellState extends State<Shell> {
         ),
         actions: [
           const ThemePicker(),
+          if (api.signedIn) const NotificationBell(),
           if (wide)
             for (final p in pages)
               TextButton(
