@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Param, Req, Injectable, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
 import { z } from 'zod';
 import { randomInt } from 'node:crypto';
-import { Db, Sql, one, audit, notify } from './db';
+import { Db, Sql, one, audit, notify, notifyRoles, notifyOrderTeam } from './db';
 import { Actor, Allow, management, sales, finance, parse, uuid, phone, text, digest } from './security';
 import { paymentAuthorizationUrl } from './payment-providers';
 const checkout=z.object({items:z.array(z.object({variantId:uuid,quantity:z.number().int().min(1).max(50)}).strict()).min(1).max(50),fulfilment:z.enum(['DELIVERY','PICKUP','IN_SHOP']),zoneId:z.string().max(30).optional(),address:z.string().max(500).optional(),customerName:text(100),customerPhone:phone,notes:z.string().max(2000).optional(),customerId:uuid.optional(),channel:z.enum(['ONLINE','SHOP']).default('ONLINE')}).strict();
@@ -50,7 +50,7 @@ export class OrderService {
    await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[o.id,o.status,'Order placed; stock reserved',a.id]);
    if(d.fulfilment==='DELIVERY')await sql.query('INSERT INTO deliveries(order_id) VALUES($1)',[o.id]);
    await sql.query('UPDATE request_keys SET result_id=$4 WHERE user_id=$1 AND key=$2 AND scope=$3',[a.id,key,'checkout',o.id]);
-   await audit(sql,a.id,'ORDER_PLACED',o.id);await notify(sql,customerId,`Order MM-${o.number} placed`,`Total: ${total} RWF. Please complete payment.`);
+   await audit(sql,a.id,'ORDER_PLACED',o.id);await notify(sql,customerId,`Order MM-${o.number} placed`,`Total: ${total} RWF. Please complete payment.`,{orderId:o.id});await notifyRoles(sql,sales,a.id,`New order MM-${o.number}`,`${o.customer_name} placed an order. Awaiting payment.`,o.id);
    return this.detail(o.id,a,sql);
   });
  }
@@ -90,7 +90,9 @@ export class OrderService {
    }
    await sql.query('UPDATE orders SET status=$2,updated_at=now() WHERE id=$1',[id,d.status]);
    await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[id,d.status,d.note,a.id]);
-   await audit(sql,a.id,`ORDER_${d.status}`,id);await notify(sql,o.customer_id,`Order MM-${o.number}: ${d.status.replaceAll('_',' ')}`,d.note);
+   await audit(sql,a.id,`ORDER_${d.status}`,id);const title=d.status==='READY'?`Order MM-${o.number} is ready`:`Order MM-${o.number}: ${d.status.replaceAll('_',' ')}`;
+   const message=d.status==='READY'?`${o.fulfilment==='DELIVERY'?'Your order is ready for delivery.':'Your order is ready for collection.'} ${d.note}`:d.note;
+   await notify(sql,o.customer_id,title,message,{orderId:id});await notifyOrderTeam(sql,id,a.id,title,message);
    return this.detail(id,a,sql);
   });
  }

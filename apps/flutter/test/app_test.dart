@@ -23,6 +23,7 @@ class FixtureApi extends Api {
   }
   @override
   Future<dynamic> get(String path) async {
+    if (path == '/notifications/unread-count') return {'count': 0};
     if (path == '/settings') {
       return {
         'sampleCatalogue': true,

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Patch, Param, Req, Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
-import { Db, Sql, one, audit, notify } from './db';
+import { Db, Sql, one, audit, notify, notifyRoles, notifyOrderTeam } from './db';
 import { Actor, Allow, management, studio, parse, uuid, money, text, optionalUrl } from './security';
 import { OrderService } from './orders';
 @Injectable()
@@ -21,7 +21,7 @@ export class StudioController {
  @Post() @Allow('CUSTOMER',...management) async create(@Req() r:any,@Body() body:any){
   const d=parse(z.object({title:text(150),garment:text(100),occasion:z.string().max(100).optional(),budget:money.optional(),dueDate:z.string().date().optional(),description:text(5000),referenceUrl:optionalUrl}).strict(),body);
   if(d.dueDate&&new Date(d.dueDate)<new Date(new Date().toISOString().slice(0,10)))throw new BadRequestException('Requested date must be in the future');
-  return this.db.tx(async sql=>{const b=await one(sql,'INSERT INTO bespoke(customer_id,title,garment,occasion,budget,due_date,description,reference_url) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[r.actor.id,d.title,d.garment,d.occasion||null,d.budget||null,d.dueDate||null,d.description,d.referenceUrl||null]);await audit(sql,r.actor.id,'BESPOKE_REQUESTED',b.id);await notify(sql,r.actor.id,'Your design request is with the atelier','Our team will review it and prepare a quotation.');return b;});
+  return this.db.tx(async sql=>{const b=await one(sql,'INSERT INTO bespoke(customer_id,title,garment,occasion,budget,due_date,description,reference_url) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[r.actor.id,d.title,d.garment,d.occasion||null,d.budget||null,d.dueDate||null,d.description,d.referenceUrl||null]);await audit(sql,r.actor.id,'BESPOKE_REQUESTED',b.id);await notify(sql,r.actor.id,'Your design request is with the atelier','Our team will review it and prepare a quotation.');await notifyRoles(sql,management,r.actor.id,'New design request',b.title);return b;});
  }
  @Get() @Allow('CUSTOMER',...studio) async list(@Req() r:any){const a:Actor=r.actor;const where=a.role==='CUSTOMER'?'b.customer_id=$1':a.role==='DESIGNER'?'b.designer_id=$1':a.role==='TAILOR'?'b.tailor_id=$1':'true';return this.db.query(`SELECT b.*,u.name customer_name FROM bespoke b JOIN users u ON u.id=b.customer_id WHERE ${where} ORDER BY b.created_at DESC LIMIT 300`,where==='true'?[]:[a.id]).then(r=>r.rows);}
  @Get(':id') @Allow('CUSTOMER',...studio) detail(@Param('id') id:string,@Req() r:any){return this.studio.visible(this.db,id,r.actor);}
@@ -30,7 +30,7 @@ export class StudioController {
   return this.db.tx(async sql=>{const b=await this.studio.visible(sql,id,r.actor,true);if(['COMPLETED','CANCELLED'].includes(b.status))throw new ConflictException('Design job is closed');
    if(!(await one(sql,"SELECT id FROM users WHERE id=$1 AND role='DESIGNER' AND active",[d.designerId])))throw new BadRequestException('Select an active designer');
    if(d.tailorId&&!(await one(sql,"SELECT id FROM users WHERE id=$1 AND role='TAILOR' AND active",[d.tailorId])))throw new BadRequestException('Select an active tailor');
-   await sql.query('UPDATE bespoke SET designer_id=$2,tailor_id=$3,updated_at=now() WHERE id=$1',[id,d.designerId,d.tailorId||null]);await audit(sql,r.actor.id,'BESPOKE_ASSIGNED',id,d);await notify(sql,d.designerId,'Design job assigned',b.title);if(d.tailorId)await notify(sql,d.tailorId,'Tailoring job assigned',b.title);return this.studio.visible(sql,id,r.actor);
+   await sql.query('UPDATE bespoke SET designer_id=$2,tailor_id=$3,updated_at=now() WHERE id=$1',[id,d.designerId,d.tailorId||null]);await audit(sql,r.actor.id,'BESPOKE_ASSIGNED',id,d);await notify(sql,d.designerId,'Design job assigned',b.title,{orderId:b.order_id||undefined});if(d.tailorId)await notify(sql,d.tailorId,'Tailoring job assigned',b.title,{orderId:b.order_id||undefined});return this.studio.visible(sql,id,r.actor);
   });
  }
  @Post(':id/quote') @Allow(...management,'DESIGNER') async quote(@Param('id') id:string,@Req() r:any,@Body() body:any){
@@ -52,7 +52,7 @@ export class StudioController {
    await sql.query('INSERT INTO order_items(order_id,product_name,quantity,unit_price) VALUES($1,$2,1,$3)',[o.id,b.title,b.quote]);
    await sql.query("UPDATE bespoke SET order_id=$2,status='ACCEPTED',updated_at=now() WHERE id=$1",[id,o.id]);
    await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[o.id,o.status,'Custom quotation accepted',r.actor.id]);if(d.fulfilment==='DELIVERY')await sql.query('INSERT INTO deliveries(order_id) VALUES($1)',[o.id]);
-   await audit(sql,r.actor.id,'BESPOKE_ACCEPTED',id,{orderId:o.id});await notify(sql,r.actor.id,'Quotation accepted',`Please pay the ${deposit} RWF deposit to start production.`);return this.orders.detail(o.id,r.actor,sql);
+   await audit(sql,r.actor.id,'BESPOKE_ACCEPTED',id,{orderId:o.id});await notify(sql,r.actor.id,'Quotation accepted',`Please pay the ${deposit} RWF deposit to start production.`,{orderId:o.id});await notifyOrderTeam(sql,o.id,r.actor.id,`New bespoke order MM-${o.number}`,`${b.title}: quotation accepted. Awaiting deposit.`);return this.orders.detail(o.id,r.actor,sql);
   });
  }
  @Patch(':id/measurements') @Allow(...studio) async measure(@Param('id') id:string,@Req() r:any,@Body() body:any){
@@ -60,7 +60,7 @@ export class StudioController {
   const d=parse(z.object(shape).strict(),body);
   return this.db.tx(async sql=>{const b=await this.studio.visible(sql,id,r.actor,true);if(['COMPLETED','CANCELLED'].includes(b.status))throw new ConflictException('Job is closed');await sql.query('UPDATE bespoke SET measurements=$2,updated_at=now() WHERE id=$1',[id,JSON.stringify(d)]);await audit(sql,r.actor.id,'MEASUREMENTS_UPDATED',id);return this.studio.visible(sql,id,r.actor);});
  }
- @Post(':id/fitting') @Allow(...studio) async fitting(@Param('id') id:string,@Req() r:any){return this.db.tx(async sql=>{const b=await this.studio.visible(sql,id,r.actor,true);if(b.status!=='IN_PRODUCTION')throw new ConflictException('Start production before a fitting');await sql.query("UPDATE bespoke SET status='FITTING',updated_at=now() WHERE id=$1",[id]);await notify(sql,b.customer_id,'Your garment is ready for a fitting','Please book a fitting appointment in the app.');await audit(sql,r.actor.id,'FITTING_REQUESTED',id);return this.studio.visible(sql,id,r.actor);});}
+ @Post(':id/fitting') @Allow(...studio) async fitting(@Param('id') id:string,@Req() r:any){return this.db.tx(async sql=>{const b=await this.studio.visible(sql,id,r.actor,true);if(b.status!=='IN_PRODUCTION')throw new ConflictException('Start production before a fitting');await sql.query("UPDATE bespoke SET status='FITTING',updated_at=now() WHERE id=$1",[id]);await notify(sql,b.customer_id,'Your garment is ready for a fitting','Please book a fitting appointment in the app.',{orderId:b.order_id||undefined});await audit(sql,r.actor.id,'FITTING_REQUESTED',id);return this.studio.visible(sql,id,r.actor);});}
 }
 @Controller('appointments')
 export class AppointmentsController {
@@ -70,7 +70,7 @@ export class AppointmentsController {
   const d=parse(z.object({kind:z.enum(['CONSULTATION','MEASUREMENT','FITTING','COLLECTION']),startsAt:z.string().datetime({offset:true}),bespokeId:uuid.optional(),notes:z.string().max(2000).optional()}).strict(),body);const start=new Date(d.startsAt);if(start.getTime()<Date.now()+3600000)throw new BadRequestException('Book at least an hour in advance');
   return this.db.tx(async sql=>{await sql.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[r.actor.id]);if(d.bespokeId)await this.studio.visible(sql,d.bespokeId,r.actor);const s=(await one(sql,'SELECT data FROM settings WHERE id=1')).data;const end=new Date(start.getTime()+s.appointmentMinutes*60000);
    if(await one(sql,"SELECT id FROM appointments WHERE customer_id=$1 AND status IN ('REQUESTED','CONFIRMED') AND starts_at<$3 AND ends_at>$2",[r.actor.id,start,end]))throw new ConflictException('You already have an appointment at this time');
-   const a=await one(sql,'INSERT INTO appointments(customer_id,bespoke_id,kind,starts_at,ends_at,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[r.actor.id,d.bespokeId||null,d.kind,start,end,d.notes||null]);await notify(sql,r.actor.id,'Appointment requested','The atelier will confirm your time.');return a;});
+   const a=await one(sql,'INSERT INTO appointments(customer_id,bespoke_id,kind,starts_at,ends_at,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[r.actor.id,d.bespokeId||null,d.kind,start,end,d.notes||null]);await notify(sql,r.actor.id,'Appointment requested','The atelier will confirm your time.');await notifyRoles(sql,management,r.actor.id,'New appointment request',`${d.kind} at ${start.toISOString()}`);return a;});
  }
  @Post(':id/status') @Allow('CUSTOMER',...studio) async status(@Param('id') id:string,@Req() r:any,@Body() body:any){
   const d=parse(z.object({status:z.enum(['CONFIRMED','COMPLETED','CANCELLED']),staffId:uuid.optional()}).strict(),body);const a:Actor=r.actor;
@@ -81,7 +81,7 @@ export class AppointmentsController {
     if(!staff||!(await one(sql,"SELECT id FROM users WHERE id=$1 AND active AND role IN ('DESIGNER','TAILOR') FOR UPDATE",[staff])))throw new BadRequestException('Select an active designer or tailor');
     if(await one(sql,"SELECT id FROM appointments WHERE id<>$1 AND staff_id=$2 AND status='CONFIRMED' AND starts_at<$4 AND ends_at>$3",[id,staff,ap.starts_at,ap.ends_at]))throw new ConflictException('This staff member is already booked');
    }
-   const updated=await one(sql,'UPDATE appointments SET status=$2,staff_id=$3 WHERE id=$1 RETURNING *',[id,d.status,staff||null]);await audit(sql,a.id,`APPOINTMENT_${d.status}`,id);await notify(sql,ap.customer_id,`Appointment ${d.status.toLowerCase()}`,`${ap.kind} at ${new Date(ap.starts_at).toISOString()}`);return updated;
+   const updated=await one(sql,'UPDATE appointments SET status=$2,staff_id=$3 WHERE id=$1 RETURNING *',[id,d.status,staff||null]);await audit(sql,a.id,`APPOINTMENT_${d.status}`,id);await notify(sql,ap.customer_id,`Appointment ${d.status.toLowerCase()}`,`${ap.kind} at ${new Date(ap.starts_at).toISOString()}`);if(staff)await notify(sql,staff,`Appointment ${d.status.toLowerCase()}`,`${ap.kind} at ${new Date(ap.starts_at).toISOString()}`,{email:false});if(a.role==='CUSTOMER')await notifyRoles(sql,management,a.id,'Appointment cancelled',`${ap.kind} at ${new Date(ap.starts_at).toISOString()}`);return updated;
   });
  }
 }

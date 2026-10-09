@@ -43,6 +43,33 @@ test('public health reports the deployed revision and fails when the database is
 });
 async function order(fulfilment='PICKUP',quantity=1){const r=await call(customer,'post','/orders',checkoutData(fulfilment,quantity),randomUUID());assert.equal(r.status,201,JSON.stringify(r.body));return r.body;}
 async function cash(o,amount=o.total,key=randomUUID()){const r=await call(admin,'post',`/payments/orders/${o.id}/cash`,{amount,receiptReference:'CASH-TEST'},key);assert.equal(r.status,201,JSON.stringify(r.body));return r.body;}
+test('order alerts route to related users, survive retries and enforce read ownership',async()=>{
+ await sql.query('UPDATE variants SET stock=stock+5 WHERE id=$1',[variant.id]);
+ const key=randomUUID(),body=checkoutData();
+ const placed=await call(customer,'post','/orders',body,key);assert.equal(placed.status,201);
+ const o=placed.body;await call(customer,'post','/orders',body,key);
+ const notifications=async user=>(await call(user,'get','/notifications')).body.filter(n=>n.order_id===o.id);
+ assert.equal((await notifications(customer)).length,1);assert.equal((await notifications(admin)).length,1);
+ for(const u of [other,driver,designer])assert.equal((await notifications(u)).length,0);
+ assert.equal((await sql.query('SELECT count(*)::integer n FROM outbox WHERE user_id=$1 AND subject=$2',[admin.id,`New order MM-${o.number}`])).rows[0].n,0);
+ await cash(o);
+ const transition=await call(admin,'post',`/orders/${o.id}/status`,{status:'READY',note:'Packed for pickup'});assert.equal(transition.status,201);
+ const ready=(await notifications(customer)).find(n=>n.title===`Order MM-${o.number} is ready`);
+ assert.ok(ready);assert.match(ready.body,/ready for collection/);
+ await call(other,'post',`/notifications/${ready.id}/read`);
+ assert.equal((await notifications(customer)).find(n=>n.id===ready.id).read_at,null);
+ await call(customer,'post',`/notifications/${ready.id}/read`);
+ const readAt=(await notifications(customer)).find(n=>n.id===ready.id).read_at;assert.ok(readAt);
+ await call(customer,'post',`/notifications/${ready.id}/read`);
+ assert.equal((await notifications(customer)).find(n=>n.id===ready.id).read_at,readAt);
+ assert.equal((await call(customer,'post','/notifications/read-all')).status,201);
+ assert.equal((await call(customer,'get','/notifications/unread-count')).body.count,0);
+ assert.ok((await call(admin,'get','/notifications/unread-count')).body.count>0);
+ assert.equal((await call(null,'get','/notifications')).status,401);
+ assert.equal((await call(null,'post','/notifications/read-all')).status,401);
+});
+
+
 test('registration cannot choose a staff role; customer/driver/finance permissions are enforced',async()=>{
  const escalated=await call(null,'post','/auth/register',{email:'evil@test.rw',password:passwords,name:'Test',phone:'250780000001',role:'SUPER_ADMIN'});assert.equal(escalated.status,400);
  assert.equal((await call(customer,'get','/users')).status,403);assert.equal((await call(driver,'get','/reports')).status,403);assert.equal((await call(accountant,'post','/products',{})).status,403);assert.equal((await call(null,'get','/orders')).status,401);
@@ -310,4 +337,19 @@ test('legacy provider failures cannot starve new payments in background polling'
   provider.results.set(raw.reference,verified(raw));await workers.tick();
   assert.equal((await call(customer,'get',`/orders/${o.id}`)).body.paid,o.total);
  }finally{legacyProvider.status=original;if(smtp===undefined)delete process.env.SMTP_HOST;else process.env.SMTP_HOST=smtp;}
+});
+
+test('order team alerts include assigned staff and exclude unrelated users',async()=>{
+ const {notifyOrderTeam}=dbModule;
+ const b=(await sql.query('SELECT * FROM bespoke WHERE order_id IS NOT NULL LIMIT 1')).rows[0];assert.ok(b);
+ await db.tx(sql=>notifyOrderTeam(sql,b.order_id,admin.id,'Team routing test','Related order update'));
+ const recipients=(await sql.query('SELECT user_id FROM notifications WHERE title=$1',['Team routing test'])).rows.map(n=>n.user_id);
+ assert.ok(recipients.includes(designer.id));assert.ok(recipients.includes(tailor.id));
+ for(const u of [admin,customer,other,driver,driver2,accountant])assert.ok(!recipients.includes(u.id));
+ await sql.query('UPDATE users SET active=false WHERE id=$1',[tailor.id]);
+ try {
+  await db.tx(sql=>notifyOrderTeam(sql,b.order_id,admin.id,'Inactive routing test','Related order update'));
+  const inactive=(await sql.query('SELECT user_id FROM notifications WHERE title=$1',['Inactive routing test'])).rows;
+  assert.ok(!inactive.some(n=>n.user_id===tailor.id));
+ } finally {await sql.query('UPDATE users SET active=true WHERE id=$1',[tailor.id]);}
 });

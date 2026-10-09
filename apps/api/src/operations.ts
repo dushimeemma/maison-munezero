@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Patch, Param, Req, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
 import { z } from 'zod';
-import { Db, one, audit, notify } from './db';
+import { Db, one, audit, notify, notifyRoles, notifyOrderTeam } from './db';
 import { Actor, Allow, management, sales, finance, parse, uuid, money, phone, text, roles } from './security';
 import { OrderService } from './orders';
 @Controller()
@@ -28,7 +28,7 @@ export class OperationsController {
    if(!(await one(sql,"SELECT id FROM users WHERE id=$1 AND active AND role='DRIVER'",[d.driverId])))throw new BadRequestException('Select an active driver');
    const updated=await one(sql,"UPDATE deliveries SET driver_id=$2,status='ASSIGNED',assigned_at=now(),proof=NULL WHERE id=$1 RETURNING *",[id,d.driverId]);
    await sql.query("UPDATE orders SET status='READY',updated_at=now() WHERE id=$1",[o.id]);await sql.query("INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,'READY',$2,$3)",[o.id,'Delivery driver assigned or reassigned',r.actor.id]);
-   await audit(sql,r.actor.id,'DRIVER_ASSIGNED',id,{driverId:d.driverId});await notify(sql,d.driverId,`Delivery MM-${o.number} assigned`,o.address);return updated;
+   await audit(sql,r.actor.id,'DRIVER_ASSIGNED',id,{driverId:d.driverId});await notify(sql,d.driverId,`Delivery MM-${o.number} assigned`,o.address,{orderId:o.id});return updated;
   });
  }
  @Post('deliveries/:id/status') @Allow('DRIVER') async deliveryStatus(@Req() r:any,@Param('id') id:string,@Body() body:any){
@@ -43,7 +43,7 @@ export class OperationsController {
    const status=d.status==='DELIVERED'?'COMPLETED':d.status==='FAILED'?'READY':'OUT_FOR_DELIVERY';
    const updated=await one(sql,'UPDATE deliveries SET status=$2,proof=$3,delivered_at=CASE WHEN $2=\'DELIVERED\' THEN now() ELSE NULL END WHERE id=$1 RETURNING *',[id,d.status,d.proof]);
    await sql.query('UPDATE orders SET status=$2,updated_at=now() WHERE id=$1',[o.id,status]);if(status==='COMPLETED')await sql.query("UPDATE bespoke SET status='COMPLETED',updated_at=now() WHERE order_id=$1",[o.id]);
-   await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[o.id,status,d.proof,r.actor.id]);await audit(sql,r.actor.id,`DELIVERY_${d.status}`,id);await notify(sql,o.customer_id,`Delivery MM-${o.number}: ${d.status.toLowerCase().replaceAll('_',' ')}`,d.proof);return updated;
+   await sql.query('INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,$2,$3,$4)',[o.id,status,d.proof,r.actor.id]);await audit(sql,r.actor.id,`DELIVERY_${d.status}`,id);await notify(sql,o.customer_id,`Delivery MM-${o.number}: ${d.status.toLowerCase().replaceAll('_',' ')}`,d.proof,{orderId:o.id});await notifyOrderTeam(sql,o.id,r.actor.id,`Delivery MM-${o.number}: ${d.status.toLowerCase().replaceAll('_',' ')}`,d.proof);return updated;
   });
  }
  @Post('returns') @Allow('CUSTOMER') async requestReturn(@Req() r:any,@Body() body:any){
@@ -51,7 +51,7 @@ export class OperationsController {
   return this.db.tx(async sql=>{const o=await this.orders.visible(sql,d.orderId,r.actor,true);if(o.paid===0||!['CONFIRMED','READY','COMPLETED'].includes(o.status))throw new ConflictException('This order is not eligible for review');
    if(await one(sql,"SELECT id FROM payments WHERE order_id=$1 AND status='PENDING'",[o.id]))throw new ConflictException('Check the pending payment first');
    const s=(await one(sql,'SELECT data FROM settings WHERE id=1')).data;if(o.status==='COMPLETED'&&Date.now()-new Date(o.updated_at).getTime()>s.returnsDays*86400000)throw new ConflictException('The return request period has ended');
-   const rt=await one(sql,'INSERT INTO returns(order_id,customer_id,reason) VALUES($1,$2,$3) RETURNING *',[o.id,r.actor.id,d.reason]);await audit(sql,r.actor.id,'RETURN_REQUESTED',rt.id);await notify(sql,r.actor.id,'Return review requested','The team will review your request, including custom garment eligibility.');return rt;
+   const rt=await one(sql,'INSERT INTO returns(order_id,customer_id,reason) VALUES($1,$2,$3) RETURNING *',[o.id,r.actor.id,d.reason]);await audit(sql,r.actor.id,'RETURN_REQUESTED',rt.id);await notify(sql,r.actor.id,'Return review requested','The team will review your request, including custom garment eligibility.',{orderId:o.id});await notifyRoles(sql,finance,r.actor.id,`Return requested for MM-${o.number}`,d.reason,o.id);return rt;
   });
  }
  @Get('returns') @Allow('CUSTOMER',...finance) returns(@Req() r:any){return this.db.query(`SELECT r.*,o.number order_number,o.paid FROM returns r JOIN orders o ON o.id=r.order_id WHERE ${r.actor.role==='CUSTOMER'?'r.customer_id=$1':'true'} ORDER BY r.created_at DESC LIMIT 300`,r.actor.role==='CUSTOMER'?[r.actor.id]:[]).then(r=>r.rows);}
@@ -68,11 +68,13 @@ export class OperationsController {
     await sql.query("UPDATE bespoke SET status='CANCELLED',updated_at=now() WHERE order_id=$1",[o.id]);
     await sql.query("INSERT INTO order_history(order_id,status,note,actor_id) VALUES($1,'CANCELLED','Cancelled after finance verified refund; inspect goods before restocking',$2)",[o.id,r.actor.id]);
    }
-   await audit(sql,r.actor.id,`RETURN_${d.status}`,id,{amount:updated.amount,reference:updated.refund_reference});await notify(sql,o.customer_id,`Return ${d.status.toLowerCase()}`,`Order MM-${o.number}. Contact the shop for details.`);return updated;
+   await audit(sql,r.actor.id,`RETURN_${d.status}`,id,{amount:updated.amount,reference:updated.refund_reference});await notify(sql,o.customer_id,`Return ${d.status.toLowerCase()}`,`Order MM-${o.number}. Contact the shop for details.`,{orderId:o.id});return updated;
   });
  }
  @Get('notifications') notifications(@Req() r:any){return this.db.query('SELECT * FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100',[r.actor.id]).then(r=>r.rows);}
- @Post('notifications/:id/read') async read(@Req() r:any,@Param('id') id:string){await this.db.query('UPDATE notifications SET read_at=now() WHERE id=$1 AND user_id=$2',[parse(uuid,id),r.actor.id]);return {ok:true};}
+ @Get('notifications/unread-count') async unreadCount(@Req() r:any){return {count:(await one(this.db,'SELECT count(*)::integer count FROM notifications WHERE user_id=$1 AND read_at IS NULL',[r.actor.id])).count};}
+ @Post('notifications/read-all') async readAll(@Req() r:any){await this.db.query('UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL',[r.actor.id]);return {ok:true};}
+ @Post('notifications/:id/read') async read(@Req() r:any,@Param('id') id:string){await this.db.query('UPDATE notifications SET read_at=COALESCE(read_at,now()) WHERE id=$1 AND user_id=$2',[parse(uuid,id),r.actor.id]);return {ok:true};}
  @Get('reports') @Allow(...finance) async reports(){
   const sales=await one(this.db,"SELECT COALESCE(sum(amount),0)::bigint gross FROM payments WHERE status='SUCCESSFUL'");
   const refunds=await one(this.db,"SELECT COALESCE(sum(amount),0)::bigint refunds FROM returns WHERE status='REFUNDED'");
